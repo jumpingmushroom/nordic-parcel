@@ -75,6 +75,98 @@ data:
   tracking_id: "370000000000123456"
 ```
 
+### Dashboard Card
+
+You can set up a dashboard card to add parcels and view all currently tracked parcels without using Developer Tools.
+
+#### 1. Create helpers
+
+Go to **Settings > Devices & Services > Helpers** and create:
+
+- **Dropdown** named `Parcel Carrier` with options: `bring`, `postnord`, `helthjem`
+- **Text** named `Parcel Tracking ID` with min length `0` and max length `50`
+
+Or add them via YAML:
+
+```yaml
+input_select:
+  parcel_carrier:
+    name: Parcel Carrier
+    options:
+      - bring
+      - postnord
+      - helthjem
+
+input_text:
+  parcel_tracking_id:
+    name: Parcel Tracking ID
+    min: 0
+    max: 50
+    mode: text
+    initial: ""
+```
+
+#### 2. Create automation
+
+This automation triggers when you enter a tracking ID, adds it to the integration, and clears the field:
+
+```yaml
+automation:
+  - alias: "Add parcel tracking from dashboard"
+    trigger:
+      - platform: state
+        entity_id: input_text.parcel_tracking_id
+    condition:
+      - condition: template
+        value_template: "{{ trigger.to_state.state | length > 4 }}"
+    action:
+      - service: nordic_parcel.add_tracking
+        data:
+          tracking_id: "{{ states('input_text.parcel_tracking_id') }}"
+          carrier: "{{ states('input_select.parcel_carrier') }}"
+      - service: input_text.set_value
+        target:
+          entity_id: input_text.parcel_tracking_id
+        data:
+          value: ""
+```
+
+#### 3. Add the card
+
+Add this card to your Lovelace dashboard to get an input form and a live list of tracked parcels:
+
+```yaml
+type: vertical-stack
+cards:
+  - type: entities
+    title: Track a Parcel
+    entities:
+      - entity: input_select.parcel_carrier
+        name: Carrier
+      - entity: input_text.parcel_tracking_id
+        name: Tracking ID
+  - type: markdown
+    title: Current Parcels
+    content: >-
+      {% set icons = {
+        'Pre Transit': '📦',
+        'In Transit': '🚚',
+        'Out For Delivery': '🏃',
+        'Ready For Pickup': '📬',
+        'Delivered': '✅',
+        'Unknown': '❓'
+      } %}
+      {% for state in states.sensor
+         if state.attributes.get('carrier') in ['bring', 'postnord', 'helthjem'] %}
+      {{ icons.get(state.state, '📦') }} **{{ state.attributes.sender or state.attributes.tracking_id }}**
+      {{ state.attributes.carrier | title }} · {{ state.state }}
+      {% else %}
+      *No parcels being tracked.*
+      {% endfor %}
+```
+
+Select a carrier, type the tracking ID, and hit enter. The parcel appears in the list below automatically.
+
 ### Sensor Attributes
 
 Each parcel sensor includes:
