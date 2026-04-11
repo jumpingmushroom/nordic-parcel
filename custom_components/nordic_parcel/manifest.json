@@ -1,11 +1,12 @@
 {
   "domain": "nordic_parcel",
   "name": "Nordic Parcel",
-  "codeowners": [],
+  "codeowners": ["@jumpingmushroom"],
   "config_flow": true,
-  "documentation": "https://github.com/yourusername/posten_sporing",
+  "documentation": "https://github.com/jumpingmushroom/nordic-parcel",
+  "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/yourusername/posten_sporing/issues",
+  "issue_tracker": "https://github.com/jumpingmushroom/nordic-parcel/issues",
   "requirements": ["aiohttp>=3.9.0"],
   "version": "0.1.0"
 }
