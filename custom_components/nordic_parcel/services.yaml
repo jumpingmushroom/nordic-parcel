@@ -1,19 +1,11 @@
 add_tracking:
-  name: Add tracking
-  description: Start tracking a parcel by its tracking number.
   fields:
     tracking_id:
-      name: Tracking ID
-      description: The tracking number from the carrier.
       required: true
       example: "370000000000123456"
       selector:
         text:
     carrier:
-      name: Carrier
-      description: >-
-        Which carrier to use. If omitted, the tracking number is added to the
-        first configured carrier.
       required: false
       selector:
         select:
@@ -26,12 +18,8 @@ add_tracking:
               value: "helthjem"
 
 remove_tracking:
-  name: Remove tracking
-  description: Stop tracking a parcel and remove its sensor.
   fields:
     tracking_id:
-      name: Tracking ID
-      description: The tracking number to stop tracking.
       required: true
       example: "370000000000123456"
       selector:
