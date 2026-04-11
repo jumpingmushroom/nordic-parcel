@@ -195,12 +195,126 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
         self, entry_data: dict[str, Any]
     ) -> FlowResult:
         """Handle reauthentication."""
+        self._reauth_entry = self._get_reauth_entry()
         carrier = Carrier(entry_data[CONF_CARRIER])
         if carrier == Carrier.BRING:
-            return await self.async_step_bring()
+            return await self.async_step_reauth_bring()
         if carrier == Carrier.POSTNORD:
-            return await self.async_step_postnord()
-        return await self.async_step_helthjem()
+            return await self.async_step_reauth_postnord()
+        return await self.async_step_reauth_helthjem()
+
+    async def async_step_reauth_bring(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle Bring reauthentication."""
+        errors: dict[str, str] = {}
+        entry = self._reauth_entry
+
+        if user_input is not None:
+            session = async_get_clientsession(self.hass)
+            client = BringApiClient(
+                session, user_input[CONF_API_UID], user_input[CONF_API_KEY]
+            )
+            try:
+                if await client.authenticate():
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        data={
+                            **entry.data,
+                            CONF_API_UID: user_input[CONF_API_UID],
+                            CONF_API_KEY: user_input[CONF_API_KEY],
+                        },
+                    )
+                errors["base"] = "invalid_auth"
+            except CarrierApiError:
+                errors["base"] = "cannot_connect"
+
+        return self.async_show_form(
+            step_id="reauth_bring",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_API_UID,
+                        default=entry.data.get(CONF_API_UID, ""),
+                    ): str,
+                    vol.Required(CONF_API_KEY): str,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_reauth_postnord(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle Postnord reauthentication."""
+        errors: dict[str, str] = {}
+        entry = self._reauth_entry
+
+        if user_input is not None:
+            session = async_get_clientsession(self.hass)
+            client = PostnordApiClient(session, user_input[CONF_API_KEY])
+            try:
+                if await client.authenticate():
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        data={
+                            **entry.data,
+                            CONF_API_KEY: user_input[CONF_API_KEY],
+                        },
+                    )
+                errors["base"] = "invalid_auth"
+            except CarrierApiError:
+                errors["base"] = "cannot_connect"
+
+        return self.async_show_form(
+            step_id="reauth_postnord",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_API_KEY): str,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_reauth_helthjem(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle Helthjem reauthentication."""
+        errors: dict[str, str] = {}
+        entry = self._reauth_entry
+
+        if user_input is not None:
+            session = async_get_clientsession(self.hass)
+            client = HelthjemApiClient(
+                session, user_input[CONF_CLIENT_ID], user_input[CONF_CLIENT_SECRET]
+            )
+            try:
+                if await client.authenticate():
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        data={
+                            **entry.data,
+                            CONF_CLIENT_ID: user_input[CONF_CLIENT_ID],
+                            CONF_CLIENT_SECRET: user_input[CONF_CLIENT_SECRET],
+                        },
+                    )
+                errors["base"] = "invalid_auth"
+            except CarrierApiError:
+                errors["base"] = "cannot_connect"
+
+        return self.async_show_form(
+            step_id="reauth_helthjem",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CLIENT_ID,
+                        default=entry.data.get(CONF_CLIENT_ID, ""),
+                    ): str,
+                    vol.Required(CONF_CLIENT_SECRET): str,
+                }
+            ),
+            errors=errors,
+        )
 
     @staticmethod
     @callback
