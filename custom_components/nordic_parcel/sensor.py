@@ -92,6 +92,8 @@ class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntit
         shipment = self._shipment
         if shipment and shipment.sender:
             return f"{shipment.carrier.value.title()} — {shipment.sender} ({self._tracking_id[-6:]})"
+        if shipment:
+            return f"{shipment.carrier.value.title()} — {self._tracking_id}"
         return f"{self._tracking_id}"
 
     @property
