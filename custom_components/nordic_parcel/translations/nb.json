@@ -30,6 +30,29 @@
           "client_id": "Klient-ID",
           "client_secret": "Klienthemmelighet"
         }
+      },
+      "reauth_bring": {
+        "title": "Autentiser Bring på nytt",
+        "description": "Bring-legitimasjonene dine har utløpt eller blitt ugyldige. Vennligst skriv inn API-legitimasjonene dine på nytt.",
+        "data": {
+          "api_uid": "Mybring e-post",
+          "api_key": "API-nøkkel"
+        }
+      },
+      "reauth_postnord": {
+        "title": "Autentiser Postnord på nytt",
+        "description": "Postnord-legitimasjonene dine har utløpt eller blitt ugyldige. Vennligst skriv inn API-nøkkelen din på nytt.",
+        "data": {
+          "api_key": "API-nøkkel"
+        }
+      },
+      "reauth_helthjem": {
+        "title": "Autentiser Helthjem på nytt",
+        "description": "Helthjem-legitimasjonene dine har utløpt eller blitt ugyldige. Vennligst skriv inn API-legitimasjonene dine på nytt.",
+        "data": {
+          "client_id": "Klient-ID",
+          "client_secret": "Klienthemmelighet"
+        }
       }
     },
     "error": {
@@ -38,7 +61,8 @@
       "unknown": "En uventet feil oppstod."
     },
     "abort": {
-      "already_configured": "Denne transportørkontoen er allerede konfigurert."
+      "already_configured": "Denne transportørkontoen er allerede konfigurert.",
+      "reauth_successful": "Autentisering på nytt var vellykket."
     }
   },
   "options": {
@@ -56,6 +80,32 @@
     "sensor": {
       "parcel": {
         "name": "Pakke {tracking_id}"
+      }
+    }
+  },
+  "services": {
+    "add_tracking": {
+      "name": "Legg til sporing",
+      "description": "Begynn å spore en pakke med sporingsnummeret.",
+      "fields": {
+        "tracking_id": {
+          "name": "Sporings-ID",
+          "description": "Sporingsnummeret fra transportøren."
+        },
+        "carrier": {
+          "name": "Transportør",
+          "description": "Hvilken transportør som skal brukes. Hvis utelatt, legges sporingsnummeret til den første konfigurerte transportøren."
+        }
+      }
+    },
+    "remove_tracking": {
+      "name": "Fjern sporing",
+      "description": "Slutt å spore en pakke og fjern sensoren.",
+      "fields": {
+        "tracking_id": {
+          "name": "Sporings-ID",
+          "description": "Sporingsnummeret som skal fjernes fra sporing."
+        }
       }
     }
   }
