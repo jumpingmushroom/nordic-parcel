@@ -1,0 +1,152 @@
+"""Nordic Parcel — Track parcels from Bring, Postnord, and Helthjem."""
+
+from __future__ import annotations
+
+import logging
+
+import voluptuous as vol
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+from .api.bring import BringApiClient
+from .api.helthjem import HelthjemApiClient
+from .api.postnord import PostnordApiClient
+from .const import (
+    CONF_API_KEY,
+    CONF_API_UID,
+    CONF_CARRIER,
+    CONF_CLIENT_ID,
+    CONF_CLIENT_SECRET,
+    DOMAIN,
+    Carrier,
+)
+from .coordinator import NordicParcelCoordinator
+
+_LOGGER = logging.getLogger(__name__)
+
+PLATFORMS: list[Platform] = [Platform.SENSOR]
+
+SERVICE_ADD_TRACKING = "add_tracking"
+SERVICE_REMOVE_TRACKING = "remove_tracking"
+
+SERVICE_ADD_SCHEMA = vol.Schema(
+    {
+        vol.Required("tracking_id"): str,
+        vol.Optional("carrier"): vol.In(
+            [Carrier.BRING, Carrier.POSTNORD, Carrier.HELTHJEM]
+        ),
+    }
+)
+
+SERVICE_REMOVE_SCHEMA = vol.Schema(
+    {
+        vol.Required("tracking_id"): str,
+    }
+)
+
+
+def _create_client(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> BringApiClient | PostnordApiClient | HelthjemApiClient:
+    """Create the appropriate API client for a config entry."""
+    session = async_get_clientsession(hass)
+    carrier = Carrier(entry.data[CONF_CARRIER])
+
+    if carrier == Carrier.BRING:
+        return BringApiClient(
+            session,
+            entry.data[CONF_API_UID],
+            entry.data[CONF_API_KEY],
+        )
+    if carrier == Carrier.POSTNORD:
+        return PostnordApiClient(session, entry.data[CONF_API_KEY])
+    return HelthjemApiClient(
+        session,
+        entry.data[CONF_CLIENT_ID],
+        entry.data[CONF_CLIENT_SECRET],
+    )
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Nordic Parcel from a config entry."""
+    client = _create_client(hass, entry)
+    coordinator = NordicParcelCoordinator(hass, entry, client)
+
+    await coordinator.async_config_entry_first_refresh()
+
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Register services (once, when first entry loads)
+    if not hass.services.has_service(DOMAIN, SERVICE_ADD_TRACKING):
+        _register_services(hass)
+
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        hass.data[DOMAIN].pop(entry.entry_id)
+
+    # Unregister services if no entries remain
+    if not hass.data[DOMAIN]:
+        hass.data.pop(DOMAIN)
+        hass.services.async_remove(DOMAIN, SERVICE_ADD_TRACKING)
+        hass.services.async_remove(DOMAIN, SERVICE_REMOVE_TRACKING)
+
+    return unload_ok
+
+
+def _register_services(hass: HomeAssistant) -> None:
+    """Register integration services."""
+
+    async def handle_add_tracking(call: ServiceCall) -> None:
+        """Handle the add_tracking service call."""
+        tracking_id = call.data["tracking_id"]
+        carrier_filter = call.data.get("carrier")
+
+        coordinators: list[NordicParcelCoordinator] = list(
+            hass.data.get(DOMAIN, {}).values()
+        )
+
+        if carrier_filter:
+            coordinators = [
+                c for c in coordinators if c.client.carrier == carrier_filter
+            ]
+
+        if not coordinators:
+            _LOGGER.error(
+                "No matching carrier configured for tracking %s", tracking_id
+            )
+            return
+
+        # Add to the first matching coordinator
+        await coordinators[0].add_tracking(tracking_id)
+
+    async def handle_remove_tracking(call: ServiceCall) -> None:
+        """Handle the remove_tracking service call."""
+        tracking_id = call.data["tracking_id"]
+
+        for coordinator in hass.data.get(DOMAIN, {}).values():
+            if tracking_id in coordinator.manual_tracking_ids:
+                await coordinator.remove_tracking(tracking_id)
+                return
+
+        _LOGGER.warning("Tracking ID %s not found in any carrier", tracking_id)
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_ADD_TRACKING, handle_add_tracking, schema=SERVICE_ADD_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REMOVE_TRACKING,
+        handle_remove_tracking,
+        schema=SERVICE_REMOVE_SCHEMA,
+    )

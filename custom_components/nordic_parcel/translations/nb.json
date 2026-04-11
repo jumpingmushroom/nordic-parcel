@@ -1,0 +1,62 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Nordic Parcel",
+        "description": "Velg pakketransportør for oppsett.",
+        "data": {
+          "carrier": "Transportør"
+        }
+      },
+      "bring": {
+        "title": "Bring (Posten Norge)",
+        "description": "Skriv inn dine Mybring API-legitimasjoner. Hent dem på {docs_url}",
+        "data": {
+          "api_uid": "Mybring e-post",
+          "api_key": "API-nøkkel"
+        }
+      },
+      "postnord": {
+        "title": "Postnord",
+        "description": "Skriv inn din Postnord API-nøkkel. Hent en på {docs_url}",
+        "data": {
+          "api_key": "API-nøkkel"
+        }
+      },
+      "helthjem": {
+        "title": "Helthjem",
+        "description": "Skriv inn dine Helthjem API-legitimasjoner. Kontakt integrations@helthjem.no eller se {docs_url}",
+        "data": {
+          "client_id": "Klient-ID",
+          "client_secret": "Klienthemmelighet"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kunne ikke koble til transportørens API.",
+      "invalid_auth": "Ugyldige legitimasjoner. Vennligst sjekk og prøv igjen.",
+      "unknown": "En uventet feil oppstod."
+    },
+    "abort": {
+      "already_configured": "Denne transportørkontoen er allerede konfigurert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nordic Parcel-innstillinger",
+        "data": {
+          "scan_interval": "Oppdateringsintervall (sekunder)",
+          "cleanup_days": "Fjern leverte pakker etter (dager, 0 = aldri)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "parcel": {
+        "name": "Pakke {tracking_id}"
+      }
+    }
+  }
+}

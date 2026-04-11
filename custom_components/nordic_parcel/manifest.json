@@ -1,0 +1,11 @@
+{
+  "domain": "nordic_parcel",
+  "name": "Nordic Parcel",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/yourusername/posten_sporing",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/yourusername/posten_sporing/issues",
+  "requirements": ["aiohttp>=3.9.0"],
+  "version": "0.1.0"
+}

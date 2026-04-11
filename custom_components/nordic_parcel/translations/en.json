@@ -1,0 +1,62 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Nordic Parcel",
+        "description": "Select the parcel carrier to set up.",
+        "data": {
+          "carrier": "Carrier"
+        }
+      },
+      "bring": {
+        "title": "Bring (Posten Norge)",
+        "description": "Enter your Mybring API credentials. Get them at {docs_url}",
+        "data": {
+          "api_uid": "Mybring email",
+          "api_key": "API key"
+        }
+      },
+      "postnord": {
+        "title": "Postnord",
+        "description": "Enter your Postnord API key. Get one at {docs_url}",
+        "data": {
+          "api_key": "API key"
+        }
+      },
+      "helthjem": {
+        "title": "Helthjem",
+        "description": "Enter your Helthjem API credentials. Contact integrations@helthjem.no or see {docs_url}",
+        "data": {
+          "client_id": "Client ID",
+          "client_secret": "Client secret"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the carrier API.",
+      "invalid_auth": "Invalid credentials. Please check and try again.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This carrier account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nordic Parcel Options",
+        "data": {
+          "scan_interval": "Update interval (seconds)",
+          "cleanup_days": "Remove delivered parcels after (days, 0 = never)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "parcel": {
+        "name": "Parcel {tracking_id}"
+      }
+    }
+  }
+}
