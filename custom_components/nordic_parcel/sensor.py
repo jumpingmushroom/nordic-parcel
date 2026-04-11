@@ -7,6 +7,7 @@ import logging
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -72,7 +73,13 @@ class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntit
         super().__init__(coordinator, context=tracking_id)
         self._tracking_id = tracking_id
         self._attr_unique_id = f"{DOMAIN}_{tracking_id}"
-        self._attr_translation_key = "parcel"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, coordinator.config_entry.entry_id)},
+            name=coordinator.config_entry.title,
+            manufacturer=coordinator.client.carrier.value.title(),
+            model="Parcel Tracking",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
     @property
     def _shipment(self) -> Shipment | None:
@@ -91,10 +98,8 @@ class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntit
         """Return the name of the sensor."""
         shipment = self._shipment
         if shipment and shipment.sender:
-            return f"{shipment.carrier.value.title()} — {shipment.sender} ({self._tracking_id[-6:]})"
-        if shipment:
-            return f"{shipment.carrier.value.title()} — {self._tracking_id}"
-        return f"{self._tracking_id}"
+            return f"{shipment.sender} ({self._tracking_id[-6:]})"
+        return self._tracking_id
 
     @property
     def native_value(self) -> str | None:
