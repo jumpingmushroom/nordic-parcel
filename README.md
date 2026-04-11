@@ -88,13 +88,45 @@ Each parcel sensor includes:
 - `last_event_location` — Where the last event occurred
 - `events` — List of recent tracking events (up to 10)
 
+### Events
+
+The integration fires events on the Home Assistant event bus that you can use in automations:
+
+| Event | Fired when | Data |
+|-------|------------|------|
+| `nordic_parcel_status_changed` | Any parcel status transition | `tracking_id`, `carrier`, `sender`, `old_status`, `new_status` |
+| `nordic_parcel_delivered` | A parcel is first marked as delivered | `tracking_id`, `carrier` |
+
+Note: `nordic_parcel_status_changed` does not fire on the first poll after adding a parcel (only on subsequent transitions).
+
 ### Auto-Cleanup
 
 Delivered parcels are automatically removed after a configurable number of days (default: 3). Change this in the integration options. Set to 0 to disable auto-cleanup.
 
-A `nordic_parcel_delivered` event is fired when a parcel is first marked as delivered, which you can use in automations.
+### Automation Examples
 
-### Automation Example
+#### Notify on any parcel status change
+
+This single automation covers all parcels — current and future — with no manual configuration:
+
+```yaml
+automation:
+  - alias: "Notify on any parcel update"
+    trigger:
+      - platform: event
+        event_type: nordic_parcel_status_changed
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "Parcel Update"
+          message: >-
+            {{ trigger.event.data.carrier | title }}
+            ({{ trigger.event.data.sender }}):
+            {{ trigger.event.data.old_status | replace('_', ' ') | title }}
+            → {{ trigger.event.data.new_status | replace('_', ' ') | title }}
+```
+
+#### Notify on delivery only
 
 ```yaml
 automation:
@@ -106,7 +138,9 @@ automation:
       - service: notify.mobile_app
         data:
           title: "Parcel delivered!"
-          message: "Your {{ trigger.event.data.carrier }} parcel {{ trigger.event.data.tracking_id }} has been delivered."
+          message: >-
+            Your {{ trigger.event.data.carrier }} parcel
+            {{ trigger.event.data.tracking_id }} has been delivered.
 ```
 
 ## Options

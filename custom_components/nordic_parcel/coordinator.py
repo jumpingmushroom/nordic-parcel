@@ -58,6 +58,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
         )
         self.client = client
         self._delivered_timestamps: dict[str, datetime] = {}
+        self._previous_statuses: dict[str, str] = {}
 
     @property
     def manual_tracking_ids(self) -> list[str]:
@@ -121,7 +122,24 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
             except CarrierApiError as err:
                 _LOGGER.warning("Failed to track %s: %s", tracking_id, err)
 
-        # 3. Track delivery timestamps for auto-cleanup
+        # 3. Fire status change events
+        for tid, shipment in shipments.items():
+            old_status = self._previous_statuses.get(tid)
+            new_status = shipment.status.value
+            if old_status is not None and old_status != new_status:
+                self.hass.bus.async_fire(
+                    f"{DOMAIN}_status_changed",
+                    {
+                        "tracking_id": tid,
+                        "carrier": shipment.carrier.value,
+                        "sender": shipment.sender,
+                        "old_status": old_status,
+                        "new_status": new_status,
+                    },
+                )
+            self._previous_statuses[tid] = new_status
+
+        # 4. Track delivery timestamps for auto-cleanup
         for tid, shipment in shipments.items():
             if shipment.status == ShipmentStatus.DELIVERED:
                 if tid not in self._delivered_timestamps:
@@ -152,6 +170,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
             for tid in expired:
                 shipments.pop(tid, None)
                 self._delivered_timestamps.pop(tid, None)
+                self._previous_statuses.pop(tid, None)
                 # Also remove from manual tracking
                 if tid in self.manual_tracking_ids:
                     data = dict(self.config_entry.data)
