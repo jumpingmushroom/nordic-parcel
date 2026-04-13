@@ -5,7 +5,13 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
+
+try:
+    from homeassistant.core import HomeAssistant
+
+    _HAS_HOMEASSISTANT = True
+except ImportError:
+    _HAS_HOMEASSISTANT = False
 
 from custom_components.nordic_parcel.const import (
     CONF_API_KEY,
@@ -19,7 +25,7 @@ from custom_components.nordic_parcel.const import (
 
 
 @pytest.fixture
-def mock_bring_config_entry(hass: HomeAssistant):
+def mock_bring_config_entry(hass):
     """Create a mock Bring config entry."""
     from homeassistant.config_entries import ConfigEntry
 
@@ -41,7 +47,7 @@ def mock_bring_config_entry(hass: HomeAssistant):
 
 
 @pytest.fixture
-def mock_postnord_config_entry(hass: HomeAssistant):
+def mock_postnord_config_entry(hass):
     """Create a mock Postnord config entry."""
     from homeassistant.config_entries import ConfigEntry
 
@@ -62,7 +68,7 @@ def mock_postnord_config_entry(hass: HomeAssistant):
 
 
 @pytest.fixture
-def mock_helthjem_config_entry(hass: HomeAssistant):
+def mock_helthjem_config_entry(hass):
     """Create a mock Helthjem config entry."""
     from homeassistant.config_entries import ConfigEntry
 
