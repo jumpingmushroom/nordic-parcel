@@ -28,166 +28,112 @@ POSTNORD_URL_PATTERN = re.compile(
 
 
 @pytest.fixture
-def postnord_client():
-    """Factory fixture that creates a PostnordApiClient with a real session."""
-
-    async def _create():
-        session = aiohttp.ClientSession()
-        client = PostnordApiClient(session, "test-postnord-key")
-        return client, session
-
-    return _create
+async def postnord_client():
+    """Create a PostnordApiClient with a real session, cleaned up after test."""
+    session = aiohttp.ClientSession()
+    client = PostnordApiClient(session, "test-postnord-key")
+    yield client
+    await session.close()
 
 
 class TestAuthenticate:
     """Tests for PostnordApiClient.authenticate()."""
 
     async def test_authenticate_success(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            with aioresponses() as m:
-                m.get(POSTNORD_URL_PATTERN, status=200, payload={})
-                result = await client.authenticate()
-            assert result is True
-        finally:
-            await session.close()
+        with aioresponses() as m:
+            m.get(POSTNORD_URL_PATTERN, status=200, payload={})
+            assert await postnord_client.authenticate() is True
 
     async def test_authenticate_failure_401(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            with aioresponses() as m:
-                m.get(POSTNORD_URL_PATTERN, status=401)
-                result = await client.authenticate()
-            assert result is False
-        finally:
-            await session.close()
+        with aioresponses() as m:
+            m.get(POSTNORD_URL_PATTERN, status=401)
+            assert await postnord_client.authenticate() is False
 
     async def test_authenticate_failure_403(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            with aioresponses() as m:
-                m.get(POSTNORD_URL_PATTERN, status=403)
-                result = await client.authenticate()
-            assert result is False
-        finally:
-            await session.close()
+        with aioresponses() as m:
+            m.get(POSTNORD_URL_PATTERN, status=403)
+            assert await postnord_client.authenticate() is False
 
     async def test_authenticate_connection_error(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            with aioresponses() as m:
-                m.get(
-                    POSTNORD_URL_PATTERN,
-                    exception=aiohttp.ClientConnectionError("Connection refused"),
-                )
-                with pytest.raises(CarrierApiError, match="Could not connect"):
-                    await client.authenticate()
-        finally:
-            await session.close()
+        with aioresponses() as m:
+            m.get(
+                POSTNORD_URL_PATTERN,
+                exception=aiohttp.ClientConnectionError("Connection refused"),
+            )
+            with pytest.raises(CarrierApiError, match="Could not connect"):
+                await postnord_client.authenticate()
 
 
 class TestTrackShipment:
     """Tests for PostnordApiClient.track_shipment()."""
 
     async def test_track_shipment_success(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            with aioresponses() as m:
-                m.get(POSTNORD_URL_PATTERN, payload=POSTNORD_TRACKING_RESPONSE)
-                shipments = await client.track_shipment("00340000000000000001")
+        with aioresponses() as m:
+            m.get(POSTNORD_URL_PATTERN, payload=POSTNORD_TRACKING_RESPONSE)
+            shipments = await postnord_client.track_shipment("00340000000000000001")
 
-            assert len(shipments) == 1
-            shipment = shipments[0]
-            assert shipment.tracking_id == "00340000000000000001"
-            assert shipment.carrier == Carrier.POSTNORD
-            assert shipment.status == ShipmentStatus.IN_TRANSIT
-            assert shipment.sender == "PostNord Sender AB"
-            assert shipment.recipient is None
-            assert shipment.estimated_delivery is not None
-            assert len(shipment.events) == 1
-            assert shipment.events[0].description == "In transit"
-            assert shipment.events[0].location == "Stockholm"
-            assert shipment.events[0].status == ShipmentStatus.IN_TRANSIT
-        finally:
-            await session.close()
+        assert len(shipments) == 1
+        shipment = shipments[0]
+        assert shipment.tracking_id == "00340000000000000001"
+        assert shipment.carrier == Carrier.POSTNORD
+        assert shipment.status == ShipmentStatus.IN_TRANSIT
+        assert shipment.sender == "PostNord Sender AB"
+        assert shipment.recipient is None
+        assert shipment.estimated_delivery is not None
+        assert len(shipment.events) == 1
+        assert shipment.events[0].description == "In transit"
+        assert shipment.events[0].location == "Stockholm"
+        assert shipment.events[0].status == ShipmentStatus.IN_TRANSIT
 
     async def test_track_shipment_not_found(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            with aioresponses() as m:
-                m.get(
-                    POSTNORD_URL_PATTERN,
-                    payload={"TrackingInformationResponse": {"shipments": []}},
-                )
-                with pytest.raises(CarrierNotFoundError):
-                    await client.track_shipment("NONEXISTENT")
-        finally:
-            await session.close()
+        with aioresponses() as m:
+            m.get(
+                POSTNORD_URL_PATTERN,
+                payload={"TrackingInformationResponse": {"shipments": []}},
+            )
+            with pytest.raises(CarrierNotFoundError):
+                await postnord_client.track_shipment("NONEXISTENT")
 
     async def test_track_shipment_auth_error_401(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            with aioresponses() as m:
-                m.get(POSTNORD_URL_PATTERN, status=401)
-                with pytest.raises(CarrierAuthError):
-                    await client.track_shipment("00340000000000000001")
-        finally:
-            await session.close()
+        with aioresponses() as m:
+            m.get(POSTNORD_URL_PATTERN, status=401)
+            with pytest.raises(CarrierAuthError):
+                await postnord_client.track_shipment("00340000000000000001")
 
     async def test_track_shipment_auth_error_403(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            with aioresponses() as m:
-                m.get(POSTNORD_URL_PATTERN, status=403)
-                with pytest.raises(CarrierAuthError):
-                    await client.track_shipment("00340000000000000001")
-        finally:
-            await session.close()
+        with aioresponses() as m:
+            m.get(POSTNORD_URL_PATTERN, status=403)
+            with pytest.raises(CarrierAuthError):
+                await postnord_client.track_shipment("00340000000000000001")
 
     async def test_track_shipment_rate_limit(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            with aioresponses() as m:
-                m.get(POSTNORD_URL_PATTERN, status=429)
-                with pytest.raises(CarrierRateLimitError):
-                    await client.track_shipment("00340000000000000001")
-        finally:
-            await session.close()
+        with aioresponses() as m:
+            m.get(POSTNORD_URL_PATTERN, status=429)
+            with pytest.raises(CarrierRateLimitError):
+                await postnord_client.track_shipment("00340000000000000001")
 
     async def test_track_shipment_connection_error(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            with aioresponses() as m:
-                m.get(
-                    POSTNORD_URL_PATTERN,
-                    exception=aiohttp.ClientConnectionError("timeout"),
-                )
-                with pytest.raises(CarrierApiError, match="Connection error"):
-                    await client.track_shipment("00340000000000000001")
-        finally:
-            await session.close()
+        with aioresponses() as m:
+            m.get(
+                POSTNORD_URL_PATTERN,
+                exception=aiohttp.ClientConnectionError("timeout"),
+            )
+            with pytest.raises(CarrierApiError, match="Connection error"):
+                await postnord_client.track_shipment("00340000000000000001")
 
     async def test_track_shipment_server_error(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            with aioresponses() as m:
-                m.get(POSTNORD_URL_PATTERN, status=500)
-                with pytest.raises(CarrierApiError, match="status 500"):
-                    await client.track_shipment("00340000000000000001")
-        finally:
-            await session.close()
+        with aioresponses() as m:
+            m.get(POSTNORD_URL_PATTERN, status=500)
+            with pytest.raises(CarrierApiError, match="status 500"):
+                await postnord_client.track_shipment("00340000000000000001")
 
 
 class TestGetShipments:
     """Tests for PostnordApiClient.get_shipments()."""
 
     async def test_get_shipments_returns_empty(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            result = await client.get_shipments()
-            assert result == []
-        finally:
-            await session.close()
+        result = await postnord_client.get_shipments()
+        assert result == []
 
 
 class TestStatusMapping:
@@ -228,8 +174,4 @@ class TestCarrierProperty:
     """Tests for PostnordApiClient.carrier property."""
 
     async def test_carrier_is_postnord(self, postnord_client):
-        client, session = await postnord_client()
-        try:
-            assert client.carrier == Carrier.POSTNORD
-        finally:
-            await session.close()
+        assert postnord_client.carrier == Carrier.POSTNORD

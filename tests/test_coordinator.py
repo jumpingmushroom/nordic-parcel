@@ -442,6 +442,7 @@ async def test_add_tracking_uppercases_id(
     """Test that add_tracking uppercases the tracking ID."""
     coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
     await coordinator.add_tracking("abc123")
+    await hass.async_block_till_done()
 
     manual = mock_bring_config_entry.data.get(CONF_MANUAL_TRACKING, {})
     assert "ABC123" in manual
@@ -456,6 +457,7 @@ async def test_add_tracking_persists_to_config_entry(
     """Test that add_tracking persists the ID in config entry data."""
     coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
     await coordinator.add_tracking("TRACK999")
+    await hass.async_block_till_done()
 
     manual = mock_bring_config_entry.data[CONF_MANUAL_TRACKING]
     assert "TRACK999" in manual
@@ -478,6 +480,7 @@ async def test_remove_tracking_uppercases_and_removes(
 
     coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
     await coordinator.remove_tracking("track001")
+    await hass.async_block_till_done()
 
     manual = mock_bring_config_entry.data.get(CONF_MANUAL_TRACKING, {})
     assert "TRACK001" not in manual
@@ -491,6 +494,7 @@ async def test_remove_tracking_nonexistent_id_is_noop(
     """Test that removing a non-existent ID doesn't error."""
     coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
     await coordinator.remove_tracking("DOESNOTEXIST")
+    await hass.async_block_till_done()
     # Should not raise
 
 
