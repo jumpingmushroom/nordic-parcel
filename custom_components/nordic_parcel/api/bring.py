@@ -184,11 +184,16 @@ class BringApiClient:
         consignment = consignment_set[0]
 
         _LOGGER.debug(
-            "Bring consignment keys for %s: %s (sender=%s, recipient=%s)",
+            "Bring consignment data for %s: sender=%s, recipient=%s, "
+            "senderAddress=%s, recipientAddress=%s, "
+            "senderHandlingAddress=%s, recipientHandlingAddress=%s",
             tracking_id,
-            list(consignment.keys()),
             consignment.get("senderName"),
             consignment.get("recipientName"),
+            consignment.get("senderAddress"),
+            consignment.get("recipientAddress"),
+            consignment.get("senderHandlingAddress"),
+            consignment.get("recipientHandlingAddress"),
         )
 
         # Check for error response
