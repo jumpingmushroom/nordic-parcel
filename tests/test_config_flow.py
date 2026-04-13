@@ -24,6 +24,7 @@ from custom_components.nordic_parcel.const import (
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 MOCK_SESSION = "custom_components.nordic_parcel.config_flow.async_get_clientsession"
+MOCK_SETUP = "custom_components.nordic_parcel.async_setup_entry"
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +50,7 @@ async def test_bring_flow_success(hass: HomeAssistant) -> None:
 
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(MOCK_SETUP, return_value=True),
         patch(
             "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
             return_value=True,
@@ -148,6 +150,7 @@ async def test_postnord_flow_success(hass: HomeAssistant) -> None:
 
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(MOCK_SETUP, return_value=True),
         patch(
             "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
             return_value=True,
@@ -234,6 +237,7 @@ async def test_helthjem_flow_success(hass: HomeAssistant) -> None:
 
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(MOCK_SETUP, return_value=True),
         patch(
             "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
             return_value=True,
