@@ -1,0 +1,19 @@
+{
+  "entity": {
+    "sensor": {
+      "parcel": {
+        "default": "mdi:package-variant",
+        "state": {
+          "unknown": "mdi:package-variant",
+          "pre_transit": "mdi:package-variant-closed",
+          "in_transit": "mdi:truck-delivery",
+          "out_for_delivery": "mdi:truck-fast",
+          "ready_for_pickup": "mdi:mailbox-up",
+          "delivered": "mdi:package-variant-closed-check",
+          "returned": "mdi:package-variant-closed-minus",
+          "failed": "mdi:package-variant-closed-remove"
+        }
+      }
+    }
+  }
+}

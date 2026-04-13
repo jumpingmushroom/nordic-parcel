@@ -79,7 +79,16 @@
   "entity": {
     "sensor": {
       "parcel": {
-        "name": "Parcel {tracking_id}"
+        "state": {
+          "unknown": "Unknown",
+          "pre_transit": "Pre-transit",
+          "in_transit": "In transit",
+          "out_for_delivery": "Out for delivery",
+          "ready_for_pickup": "Ready for pickup",
+          "delivered": "Delivered",
+          "returned": "Returned",
+          "failed": "Failed"
+        }
       }
     }
   },

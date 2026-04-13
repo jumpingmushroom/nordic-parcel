@@ -79,7 +79,16 @@
   "entity": {
     "sensor": {
       "parcel": {
-        "name": "Pakke {tracking_id}"
+        "state": {
+          "unknown": "Ukjent",
+          "pre_transit": "Forhåndsvarslet",
+          "in_transit": "Under transport",
+          "out_for_delivery": "Ute for levering",
+          "ready_for_pickup": "Klar for henting",
+          "delivered": "Levert",
+          "returned": "Returnert",
+          "failed": "Mislykket"
+        }
       }
     }
   },
