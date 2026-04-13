@@ -65,11 +65,28 @@ def _parse_event(event: dict) -> TrackingEvent:
     )
 
 
+def _format_address_city(address: dict | None) -> str | None:
+    """Format city and country code from an address dict as a fallback name."""
+    if not address:
+        return None
+    city = address.get("city")
+    if not city:
+        return None
+    country = address.get("countryCode")
+    return f"{city}, {country}" if country else city
+
+
 def _parse_consignment(consignment: dict) -> list[Shipment]:
     """Parse a Bring consignment into one Shipment per package."""
     shipments: list[Shipment] = []
-    sender = consignment.get("senderName")
-    recipient = consignment.get("recipientName")
+    sender = (
+        consignment.get("senderName")
+        or _format_address_city(consignment.get("senderAddress"))
+    )
+    recipient = (
+        consignment.get("recipientName")
+        or _format_address_city(consignment.get("recipientAddress"))
+    )
 
     for package in consignment.get("packageSet", []):
         tracking_id = package.get("packageNumber", "")
@@ -182,19 +199,6 @@ class BringApiClient:
             raise CarrierNotFoundError(f"No shipment found for {tracking_id}")
 
         consignment = consignment_set[0]
-
-        _LOGGER.debug(
-            "Bring consignment data for %s: sender=%s, recipient=%s, "
-            "senderAddress=%s, recipientAddress=%s, "
-            "senderHandlingAddress=%s, recipientHandlingAddress=%s",
-            tracking_id,
-            consignment.get("senderName"),
-            consignment.get("recipientName"),
-            consignment.get("senderAddress"),
-            consignment.get("recipientAddress"),
-            consignment.get("senderHandlingAddress"),
-            consignment.get("recipientHandlingAddress"),
-        )
 
         # Check for error response
         if "error" in consignment:
