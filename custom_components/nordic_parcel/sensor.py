@@ -73,6 +73,7 @@ class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntit
     _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = [s.value for s in ShipmentStatus]
+    _attr_translation_key = "parcel"
 
     def __init__(
         self,
