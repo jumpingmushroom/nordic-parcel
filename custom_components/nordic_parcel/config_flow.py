@@ -322,7 +322,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
         config_entry: ConfigEntry,
     ) -> NordicParcelOptionsFlow:
         """Return the options flow handler."""
-        return NordicParcelOptionsFlow(config_entry)
+        return NordicParcelOptionsFlow()
 
 
 class NordicParcelOptionsFlow(OptionsFlow):
