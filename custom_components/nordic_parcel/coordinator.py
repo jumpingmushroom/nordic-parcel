@@ -21,6 +21,7 @@ from .api import (
 )
 from .const import (
     CONF_CLEANUP_DAYS,
+    CONF_DELIVERED_TIMESTAMPS,
     CONF_MANUAL_TRACKING,
     CONF_SCAN_INTERVAL,
     DEFAULT_CLEANUP_DAYS,
@@ -57,7 +58,13 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
             always_update=False,
         )
         self.client = client
+        # Load persisted delivery timestamps
         self._delivered_timestamps: dict[str, datetime] = {}
+        for tid, ts_str in config_entry.data.get(CONF_DELIVERED_TIMESTAMPS, {}).items():
+            try:
+                self._delivered_timestamps[tid] = datetime.fromisoformat(ts_str)
+            except (ValueError, TypeError):
+                pass
         self._previous_statuses: dict[str, str] = {}
 
     @property
@@ -69,6 +76,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
 
     async def add_tracking(self, tracking_id: str) -> None:
         """Add a tracking number to manual tracking list."""
+        tracking_id = tracking_id.upper()
         data = dict(self.config_entry.data)
         manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
         manual[tracking_id] = {"added": datetime.now(timezone.utc).isoformat()}
@@ -76,11 +84,11 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
         self.hass.config_entries.async_update_entry(
             self.config_entry, data=data
         )
-        # Trigger an immediate refresh
         await self.async_request_refresh()
 
     async def remove_tracking(self, tracking_id: str) -> None:
         """Remove a tracking number from manual tracking list."""
+        tracking_id = tracking_id.upper()
         data = dict(self.config_entry.data)
         manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
         manual.pop(tracking_id, None)
@@ -93,6 +101,11 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
     async def _async_update_data(self) -> dict[str, Shipment]:
         """Fetch tracking data from the carrier API."""
         shipments: dict[str, Shipment] = {}
+        config_changed = False
+
+        # Work on a copy of manual tracking for batched updates
+        data = dict(self.config_entry.data)
+        manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
 
         # 1. Fetch auto-discovered shipments from account
         try:
@@ -102,49 +115,38 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
         except CarrierAuthError as err:
             raise ConfigEntryAuthFailed from err
         except CarrierRateLimitError:
-            raise UpdateFailed(retry_after=120)
+            raise UpdateFailed("Rate limited by carrier API")
         except CarrierApiError as err:
             _LOGGER.warning("Failed to fetch account shipments: %s", err)
 
         # 2. Fetch manually-tracked shipments
-        ids_to_replace: dict[str, list[str]] = {}
-        for tracking_id in self.manual_tracking_ids:
+        for tracking_id in list(manual.keys()):
             if tracking_id in shipments:
-                continue  # Already fetched via account
+                continue
             try:
                 results = await self.client.track_shipment(tracking_id)
                 for shipment in results:
-                    shipments[shipment.tracking_id] = shipment
-                # If the query ID resolved to different package IDs, schedule replacement
-                result_ids = [s.tracking_id for s in results]
+                    shipments[shipment.tracking_id.upper()] = shipment
+                # Replace consignment numbers with resolved package numbers
+                result_ids = [s.tracking_id.upper() for s in results]
                 if result_ids and tracking_id not in result_ids:
-                    ids_to_replace[tracking_id] = result_ids
+                    ts = manual.pop(tracking_id)
+                    for new_id in result_ids:
+                        if new_id not in manual:
+                            manual[new_id] = ts
+                    config_changed = True
+                    _LOGGER.info(
+                        "Replaced consignment %s with package(s): %s",
+                        tracking_id, ", ".join(result_ids),
+                    )
             except CarrierAuthError as err:
                 raise ConfigEntryAuthFailed from err
             except CarrierRateLimitError:
-                raise UpdateFailed(retry_after=120)
+                raise UpdateFailed("Rate limited by carrier API")
             except CarrierNotFoundError:
                 _LOGGER.debug("Tracking ID %s not found, skipping", tracking_id)
             except CarrierApiError as err:
                 _LOGGER.warning("Failed to track %s: %s", tracking_id, err)
-
-        # 2.5 Replace consignment numbers with resolved package numbers
-        if ids_to_replace:
-            data = dict(self.config_entry.data)
-            manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
-            for old_id, new_ids in ids_to_replace.items():
-                ts = manual.pop(old_id, {"added": datetime.now(timezone.utc).isoformat()})
-                for new_id in new_ids:
-                    if new_id not in manual:
-                        manual[new_id] = ts
-                _LOGGER.info(
-                    "Replaced consignment %s with package(s): %s",
-                    old_id, ", ".join(new_ids),
-                )
-            data[CONF_MANUAL_TRACKING] = manual
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, data=data
-            )
 
         # 3. Fire status change events
         for tid, shipment in shipments.items():
@@ -163,24 +165,25 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                 )
             self._previous_statuses[tid] = new_status
 
-        # 4. Track delivery timestamps for auto-cleanup
+        # 4. Track delivery timestamps
         for tid, shipment in shipments.items():
             if shipment.status == ShipmentStatus.DELIVERED:
                 if tid not in self._delivered_timestamps:
                     self._delivered_timestamps[tid] = datetime.now(timezone.utc)
-                    # Fire delivered event
+                    config_changed = True
                     self.hass.bus.async_fire(
                         f"{DOMAIN}_delivered",
                         {
                             "tracking_id": tid,
-                            "carrier": shipment.carrier,
+                            "carrier": shipment.carrier.value,
                         },
                     )
             else:
-                # Was delivered but status changed (rare) — reset
-                self._delivered_timestamps.pop(tid, None)
+                if tid in self._delivered_timestamps:
+                    self._delivered_timestamps.pop(tid)
+                    config_changed = True
 
-        # 4. Auto-cleanup delivered parcels past the threshold
+        # 5. Auto-cleanup delivered parcels past the threshold
         cleanup_days = self.config_entry.options.get(
             CONF_CLEANUP_DAYS, DEFAULT_CLEANUP_DAYS
         )
@@ -195,14 +198,19 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                 shipments.pop(tid, None)
                 self._delivered_timestamps.pop(tid, None)
                 self._previous_statuses.pop(tid, None)
-                # Also remove from manual tracking
-                if tid in self.manual_tracking_ids:
-                    data = dict(self.config_entry.data)
-                    manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
-                    manual.pop(tid, None)
-                    data[CONF_MANUAL_TRACKING] = manual
-                    self.hass.config_entries.async_update_entry(
-                        self.config_entry, data=data
-                    )
+                if tid in manual:
+                    manual.pop(tid)
+                config_changed = True
+
+        # 6. Batch-write config entry if anything changed
+        if config_changed:
+            data[CONF_MANUAL_TRACKING] = manual
+            data[CONF_DELIVERED_TIMESTAMPS] = {
+                tid: ts.isoformat()
+                for tid, ts in self._delivered_timestamps.items()
+            }
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, data=data
+            )
 
         return shipments

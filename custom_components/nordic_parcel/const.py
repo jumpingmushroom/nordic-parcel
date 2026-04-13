@@ -18,6 +18,7 @@ CONF_CLIENT_SECRET: Final = "client_secret"
 CONF_SCAN_INTERVAL: Final = "scan_interval"
 CONF_CLEANUP_DAYS: Final = "cleanup_days"
 CONF_MANUAL_TRACKING: Final = "manual_tracking"
+CONF_DELIVERED_TIMESTAMPS: Final = "delivered_timestamps"
 
 
 class Carrier(StrEnum):
