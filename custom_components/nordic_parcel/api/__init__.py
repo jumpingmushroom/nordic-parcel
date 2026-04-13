@@ -71,8 +71,8 @@ class CarrierClient(Protocol):
         """Fetch all shipments from the authenticated account."""
         ...
 
-    async def track_shipment(self, tracking_id: str) -> Shipment:
-        """Fetch tracking data for a single shipment by ID."""
+    async def track_shipment(self, tracking_id: str) -> list[Shipment]:
+        """Fetch tracking data for a shipment (may return multiple packages)."""
         ...
 
     async def close(self) -> None:

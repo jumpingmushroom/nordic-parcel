@@ -118,12 +118,14 @@ automation:
         entity_id: input_text.parcel_tracking_id
     condition:
       - condition: template
-        value_template: "{{ trigger.to_state.state | length > 4 }}"
+        value_template: >-
+          {{ trigger.to_state.state not in ['', 'unknown', 'unavailable']
+             and trigger.to_state.state | length > 4 }}
     action:
       - service: nordic_parcel.add_tracking
         data:
-          tracking_id: "{{ states('input_text.parcel_tracking_id') }}"
-          carrier: "{{ states('input_select.parcel_carrier') }}"
+          tracking_id: "{{ states('input_text.parcel_tracking_id') | string }}"
+          carrier: "{{ states('input_select.parcel_carrier') | string }}"
       - service: input_text.set_value
         target:
           entity_id: input_text.parcel_tracking_id

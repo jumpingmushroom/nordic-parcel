@@ -107,12 +107,18 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
             _LOGGER.warning("Failed to fetch account shipments: %s", err)
 
         # 2. Fetch manually-tracked shipments
+        ids_to_replace: dict[str, list[str]] = {}
         for tracking_id in self.manual_tracking_ids:
             if tracking_id in shipments:
                 continue  # Already fetched via account
             try:
-                shipment = await self.client.track_shipment(tracking_id)
-                shipments[shipment.tracking_id] = shipment
+                results = await self.client.track_shipment(tracking_id)
+                for shipment in results:
+                    shipments[shipment.tracking_id] = shipment
+                # If the query ID resolved to different package IDs, schedule replacement
+                result_ids = [s.tracking_id for s in results]
+                if result_ids and tracking_id not in result_ids:
+                    ids_to_replace[tracking_id] = result_ids
             except CarrierAuthError as err:
                 raise ConfigEntryAuthFailed from err
             except CarrierRateLimitError:
@@ -121,6 +127,24 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                 _LOGGER.debug("Tracking ID %s not found, skipping", tracking_id)
             except CarrierApiError as err:
                 _LOGGER.warning("Failed to track %s: %s", tracking_id, err)
+
+        # 2.5 Replace consignment numbers with resolved package numbers
+        if ids_to_replace:
+            data = dict(self.config_entry.data)
+            manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
+            for old_id, new_ids in ids_to_replace.items():
+                ts = manual.pop(old_id, {"added": datetime.now(timezone.utc).isoformat()})
+                for new_id in new_ids:
+                    if new_id not in manual:
+                        manual[new_id] = ts
+                _LOGGER.info(
+                    "Replaced consignment %s with package(s): %s",
+                    old_id, ", ".join(new_ids),
+                )
+            data[CONF_MANUAL_TRACKING] = manual
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, data=data
+            )
 
         # 3. Fire status change events
         for tid, shipment in shipments.items():

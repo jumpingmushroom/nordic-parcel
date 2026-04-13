@@ -194,7 +194,7 @@ class HelthjemApiClient:
         """
         return []
 
-    async def track_shipment(self, tracking_id: str) -> Shipment:
+    async def track_shipment(self, tracking_id: str) -> list[Shipment]:
         """Fetch tracking data for a single shipment."""
         token = await self._ensure_token()
 
@@ -250,7 +250,7 @@ class HelthjemApiClient:
         events.sort(key=lambda e: e.timestamp, reverse=True)
         status = events[0].status if events else ShipmentStatus.UNKNOWN
 
-        return Shipment(
+        return [Shipment(
             tracking_id=tracking_id,
             carrier=Carrier.HELTHJEM,
             status=status,
@@ -259,7 +259,7 @@ class HelthjemApiClient:
             estimated_delivery=None,
             events=events,
             raw_data=raw_data,
-        )
+        )]
 
     async def close(self) -> None:
         """No-op — session lifecycle managed externally."""

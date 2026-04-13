@@ -26,13 +26,23 @@ BASE_URL = "https://api.bring.com/tracking/api/v2/tracking.json"
 _STATUS_MAP: dict[str, ShipmentStatus] = {
     "PRE_NOTIFIED": ShipmentStatus.PRE_TRANSIT,
     "INFORMATION_RECEIVED": ShipmentStatus.PRE_TRANSIT,
+    "HANDED_IN": ShipmentStatus.IN_TRANSIT,
+    "COLLECTED": ShipmentStatus.IN_TRANSIT,
     "IN_TRANSIT": ShipmentStatus.IN_TRANSIT,
+    "TERMINAL": ShipmentStatus.IN_TRANSIT,
+    "CUSTOMS": ShipmentStatus.IN_TRANSIT,
+    "INTERNATIONAL": ShipmentStatus.IN_TRANSIT,
     "TRANSPORT_TO_RECIPIENT": ShipmentStatus.OUT_FOR_DELIVERY,
+    "DELIVERY_ORDERED": ShipmentStatus.OUT_FOR_DELIVERY,
+    "ATTEMPTED_DELIVERY": ShipmentStatus.OUT_FOR_DELIVERY,
+    "DELIVERY_CHANGED": ShipmentStatus.IN_TRANSIT,
     "READY_FOR_PICKUP": ShipmentStatus.READY_FOR_PICKUP,
     "NOTIFICATION_SENT": ShipmentStatus.READY_FOR_PICKUP,
     "DELIVERED": ShipmentStatus.DELIVERED,
     "RETURNED": ShipmentStatus.RETURNED,
+    "DELIVERED_SENDER": ShipmentStatus.RETURNED,
     "DEVIATION": ShipmentStatus.FAILED,
+    "DELIVERY_CANCELLED": ShipmentStatus.FAILED,
 }
 
 
@@ -143,8 +153,8 @@ class BringApiClient:
         """
         return []
 
-    async def track_shipment(self, tracking_id: str) -> Shipment:
-        """Fetch tracking data for a single shipment."""
+    async def track_shipment(self, tracking_id: str) -> list[Shipment]:
+        """Fetch tracking data for a shipment (may return multiple packages)."""
         try:
             async with asyncio.timeout(10):
                 resp = await self._session.get(
@@ -181,7 +191,7 @@ class BringApiClient:
         if not shipments:
             raise CarrierNotFoundError(f"No packages found for {tracking_id}")
 
-        return shipments[0]
+        return shipments
 
     async def close(self) -> None:
         """No-op — session lifecycle managed externally."""

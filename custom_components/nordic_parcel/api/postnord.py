@@ -152,7 +152,7 @@ class PostnordApiClient:
         """
         return []
 
-    async def track_shipment(self, tracking_id: str) -> Shipment:
+    async def track_shipment(self, tracking_id: str) -> list[Shipment]:
         """Fetch tracking data for a single shipment."""
         try:
             async with asyncio.timeout(10):
@@ -182,7 +182,7 @@ class PostnordApiClient:
         if not shipments:
             raise CarrierNotFoundError(f"No shipment found for {tracking_id}")
 
-        return _parse_shipment(shipments[0])
+        return [_parse_shipment(shipments[0])]
 
     async def close(self) -> None:
         """No-op — session lifecycle managed externally."""
