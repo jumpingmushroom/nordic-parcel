@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 import voluptuous as vol
 
@@ -20,6 +21,8 @@ from .const import (
     CONF_CARRIER,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
+    CONF_SCAN_INTERVAL,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     Carrier,
 )
@@ -77,8 +80,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await coordinator.async_config_entry_first_refresh()
 
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -86,18 +88,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.services.has_service(DOMAIN, SERVICE_ADD_TRACKING):
         _register_services(hass)
 
+    # Listen for options changes to update scan interval
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update."""
+    coordinator: NordicParcelCoordinator = entry.runtime_data
+    coordinator.update_interval = timedelta(
+        seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
 
     # Unregister services if no entries remain
-    if not hass.data[DOMAIN]:
-        hass.data.pop(DOMAIN)
+    remaining = [
+        e for e in hass.config_entries.async_entries(DOMAIN)
+        if e.entry_id != entry.entry_id
+    ]
+    if not remaining:
         hass.services.async_remove(DOMAIN, SERVICE_ADD_TRACKING)
         hass.services.async_remove(DOMAIN, SERVICE_REMOVE_TRACKING)
 
@@ -109,12 +123,14 @@ def _register_services(hass: HomeAssistant) -> None:
 
     async def handle_add_tracking(call: ServiceCall) -> None:
         """Handle the add_tracking service call."""
-        tracking_id = call.data["tracking_id"]
+        tracking_id = call.data["tracking_id"].upper()
         carrier_filter = call.data.get("carrier")
 
-        coordinators: list[NordicParcelCoordinator] = list(
-            hass.data.get(DOMAIN, {}).values()
-        )
+        coordinators: list[NordicParcelCoordinator] = [
+            entry.runtime_data
+            for entry in hass.config_entries.async_entries(DOMAIN)
+            if hasattr(entry, "runtime_data") and entry.runtime_data
+        ]
 
         if carrier_filter:
             coordinators = [
@@ -127,14 +143,16 @@ def _register_services(hass: HomeAssistant) -> None:
             )
             return
 
-        # Add to the first matching coordinator
         await coordinators[0].add_tracking(tracking_id)
 
     async def handle_remove_tracking(call: ServiceCall) -> None:
         """Handle the remove_tracking service call."""
-        tracking_id = call.data["tracking_id"]
+        tracking_id = call.data["tracking_id"].upper()
 
-        for coordinator in hass.data.get(DOMAIN, {}).values():
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            if not hasattr(entry, "runtime_data") or not entry.runtime_data:
+                continue
+            coordinator: NordicParcelCoordinator = entry.runtime_data
             if tracking_id in coordinator.manual_tracking_ids:
                 await coordinator.remove_tracking(tracking_id)
                 return
