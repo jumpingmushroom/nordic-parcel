@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import Shipment
-from .const import DOMAIN
+from .const import DOMAIN, ShipmentStatus
 from .coordinator import NordicParcelCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,10 +25,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Nordic Parcel sensors from a config entry."""
-    coordinator: NordicParcelCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: NordicParcelCoordinator = entry.runtime_data
 
-    # Track which tracking IDs have entities
     known_ids: set[str] = set()
+    entity_id_map: dict[str, str] = {}
 
     @callback
     def _async_add_new_entities() -> None:
@@ -39,22 +40,28 @@ async def async_setup_entry(
         current_ids = set(coordinator.data.keys())
 
         for tracking_id in current_ids - known_ids:
-            new_entities.append(
-                NordicParcelSensor(coordinator, tracking_id)
-            )
+            sensor = NordicParcelSensor(coordinator, tracking_id)
+            new_entities.append(sensor)
             known_ids.add(tracking_id)
 
-        # Remove IDs that are no longer in coordinator data (cleaned up)
+        # Remove entities for cleaned-up shipments
         removed = known_ids - current_ids
-        known_ids.difference_update(removed)
+        if removed:
+            registry = er.async_get(hass)
+            for tracking_id in removed:
+                entity_id = entity_id_map.pop(tracking_id, None)
+                if entity_id and registry.async_get(entity_id):
+                    registry.async_remove(entity_id)
+            known_ids.difference_update(removed)
 
         if new_entities:
             async_add_entities(new_entities)
+            for sensor in new_entities:
+                if sensor.entity_id:
+                    entity_id_map[sensor._tracking_id] = sensor.entity_id
 
-    # Add entities for any shipments already known
     _async_add_new_entities()
 
-    # Listen for coordinator updates to add new shipments dynamically
     entry.async_on_unload(
         coordinator.async_add_listener(_async_add_new_entities)
     )
@@ -64,6 +71,8 @@ class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntit
     """Sensor representing a tracked parcel."""
 
     _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [s.value for s in ShipmentStatus]
 
     def __init__(
         self,
@@ -107,25 +116,7 @@ class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntit
         shipment = self._shipment
         if not shipment:
             return None
-        return shipment.status.value.replace("_", " ").title()
-
-    @property
-    def icon(self) -> str:
-        """Return an icon based on status."""
-        shipment = self._shipment
-        if not shipment:
-            return "mdi:package-variant"
-
-        icon_map = {
-            "pre_transit": "mdi:package-variant-closed",
-            "in_transit": "mdi:truck-delivery",
-            "out_for_delivery": "mdi:truck-fast",
-            "ready_for_pickup": "mdi:mailbox-up",
-            "delivered": "mdi:package-variant-closed-check",
-            "returned": "mdi:package-variant-closed-minus",
-            "failed": "mdi:package-variant-closed-remove",
-        }
-        return icon_map.get(shipment.status.value, "mdi:package-variant")
+        return shipment.status.value
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -152,16 +143,5 @@ class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntit
             attrs["last_event_description"] = last.description
             attrs["last_event_time"] = last.timestamp.isoformat()
             attrs["last_event_location"] = last.location
-
-        # Include recent events (limit to 10 to keep attributes manageable)
-        attrs["events"] = [
-            {
-                "time": e.timestamp.isoformat(),
-                "description": e.description,
-                "location": e.location,
-                "status": e.status.value,
-            }
-            for e in shipment.events[:10]
-        ]
 
         return attrs
