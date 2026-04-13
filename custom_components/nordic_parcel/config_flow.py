@@ -5,12 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import aiohttp
+import hashlib
+
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import CarrierAuthError, CarrierApiError
@@ -41,7 +41,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the carrier selection step."""
         if user_input is not None:
             self._carrier = Carrier(user_input[CONF_CARRIER])
@@ -68,7 +68,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_bring(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle Bring credentials."""
         errors: dict[str, str] = {}
 
@@ -111,7 +111,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_postnord(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle Postnord credentials."""
         errors: dict[str, str] = {}
 
@@ -121,7 +121,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
             try:
                 if await client.authenticate():
                     await self.async_set_unique_id(
-                        f"postnord_{user_input[CONF_API_KEY][:8]}"
+                        f"postnord_{hashlib.sha256(user_input[CONF_API_KEY].encode()).hexdigest()[:8]}"
                     )
                     self._abort_if_unique_id_configured()
                     return self.async_create_entry(
@@ -150,7 +150,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_helthjem(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle Helthjem credentials."""
         errors: dict[str, str] = {}
 
@@ -162,7 +162,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
             try:
                 if await client.authenticate():
                     await self.async_set_unique_id(
-                        f"helthjem_{user_input[CONF_CLIENT_ID][:8]}"
+                        f"helthjem_{hashlib.sha256(user_input[CONF_CLIENT_ID].encode()).hexdigest()[:8]}"
                     )
                     self._abort_if_unique_id_configured()
                     return self.async_create_entry(
@@ -193,7 +193,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth(
         self, entry_data: dict[str, Any]
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle reauthentication."""
         self._reauth_entry = self._get_reauth_entry()
         carrier = Carrier(entry_data[CONF_CARRIER])
@@ -205,7 +205,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth_bring(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle Bring reauthentication."""
         errors: dict[str, str] = {}
         entry = self._reauth_entry
@@ -245,7 +245,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth_postnord(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle Postnord reauthentication."""
         errors: dict[str, str] = {}
         entry = self._reauth_entry
@@ -278,7 +278,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth_helthjem(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle Helthjem reauthentication."""
         errors: dict[str, str] = {}
         entry = self._reauth_entry
@@ -328,12 +328,9 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
 class NordicParcelOptionsFlow(OptionsFlow):
     """Handle options for Nordic Parcel."""
 
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        self._config_entry = config_entry
-
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Manage integration options."""
         if user_input is not None:
             return self.async_create_entry(data=user_input)
@@ -344,13 +341,13 @@ class NordicParcelOptionsFlow(OptionsFlow):
                 {
                     vol.Optional(
                         CONF_SCAN_INTERVAL,
-                        default=self._config_entry.options.get(
+                        default=self.config_entry.options.get(
                             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
                         ),
                     ): vol.All(vol.Coerce(int), vol.Range(min=60, max=86400)),
                     vol.Optional(
                         CONF_CLEANUP_DAYS,
-                        default=self._config_entry.options.get(
+                        default=self.config_entry.options.get(
                             CONF_CLEANUP_DAYS, DEFAULT_CLEANUP_DAYS
                         ),
                     ): vol.All(vol.Coerce(int), vol.Range(min=0, max=30)),
