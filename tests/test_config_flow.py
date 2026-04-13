@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -22,6 +22,8 @@ from custom_components.nordic_parcel.const import (
 )
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
+
+MOCK_SESSION = "custom_components.nordic_parcel.config_flow.async_get_clientsession"
 
 
 # ---------------------------------------------------------------------------
@@ -45,9 +47,12 @@ async def test_bring_flow_success(hass: HomeAssistant) -> None:
     """Test successful Bring config flow creates an entry."""
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
-    with patch(
-        "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
-        return_value=True,
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
+            return_value=True,
+        ),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -83,9 +88,12 @@ async def test_bring_flow_auth_failure(hass: HomeAssistant) -> None:
         user_input={CONF_CARRIER: Carrier.BRING},
     )
 
-    with patch(
-        "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
-        return_value=False,
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
+            return_value=False,
+        ),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -109,9 +117,12 @@ async def test_bring_flow_connection_error(hass: HomeAssistant) -> None:
         user_input={CONF_CARRIER: Carrier.BRING},
     )
 
-    with patch(
-        "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
-        side_effect=CarrierApiError("Connection failed"),
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
+            side_effect=CarrierApiError("Connection failed"),
+        ),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -135,9 +146,12 @@ async def test_postnord_flow_success(hass: HomeAssistant) -> None:
     """Test successful Postnord config flow creates an entry."""
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
-    with patch(
-        "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
-        return_value=True,
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
+            return_value=True,
+        ),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -166,9 +180,12 @@ async def test_postnord_flow_auth_failure(hass: HomeAssistant) -> None:
         user_input={CONF_CARRIER: Carrier.POSTNORD},
     )
 
-    with patch(
-        "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
-        return_value=False,
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
+            return_value=False,
+        ),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -189,9 +206,12 @@ async def test_postnord_flow_connection_error(hass: HomeAssistant) -> None:
         user_input={CONF_CARRIER: Carrier.POSTNORD},
     )
 
-    with patch(
-        "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
-        side_effect=CarrierApiError("Connection failed"),
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
+            side_effect=CarrierApiError("Connection failed"),
+        ),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -212,9 +232,12 @@ async def test_helthjem_flow_success(hass: HomeAssistant) -> None:
     """Test successful Helthjem config flow creates an entry."""
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
-    with patch(
-        "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
-        return_value=True,
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
+            return_value=True,
+        ),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -247,9 +270,12 @@ async def test_helthjem_flow_auth_failure(hass: HomeAssistant) -> None:
         user_input={CONF_CARRIER: Carrier.HELTHJEM},
     )
 
-    with patch(
-        "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
-        return_value=False,
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
+            return_value=False,
+        ),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -273,9 +299,12 @@ async def test_helthjem_flow_connection_error(hass: HomeAssistant) -> None:
         user_input={CONF_CARRIER: Carrier.HELTHJEM},
     )
 
-    with patch(
-        "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
-        side_effect=CarrierApiError("Connection failed"),
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
+            side_effect=CarrierApiError("Connection failed"),
+        ),
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
