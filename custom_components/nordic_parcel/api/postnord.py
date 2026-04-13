@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import aiohttp
 
@@ -53,7 +53,7 @@ def _parse_event(event: dict) -> TrackingEvent:
     try:
         timestamp = datetime.fromisoformat(timestamp_str)
     except ValueError:
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
 
     location_data = event.get("location", {})
     location = location_data.get("displayName")

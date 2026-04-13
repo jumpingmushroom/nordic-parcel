@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime
+import urllib.parse
+from datetime import datetime, timezone
 
 import aiohttp
 
@@ -110,7 +111,7 @@ def _parse_event(event: dict) -> TrackingEvent:
     try:
         timestamp = datetime.fromisoformat(timestamp_str)
     except ValueError:
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
 
     event_code = str(event.get("eventCode", event.get("code", "")))
     description = event.get("description", event.get("text", ""))
@@ -198,7 +199,7 @@ class HelthjemApiClient:
         """Fetch tracking data for a single shipment."""
         token = await self._ensure_token()
 
-        url = f"{TRACKING_URL}/{tracking_id}/EN/false"
+        url = f"{TRACKING_URL}/{urllib.parse.quote(tracking_id, safe='')}/EN/false"
 
         try:
             async with asyncio.timeout(10):
