@@ -73,6 +73,9 @@ def _parse_consignment(consignment: dict) -> list[Shipment]:
 
     for package in consignment.get("packageSet", []):
         tracking_id = package.get("packageNumber", "")
+        # Prefer package-level sender/recipient, fall back to consignment-level
+        pkg_sender = package.get("senderName") or sender
+        pkg_recipient = package.get("recipientName") or recipient
         events = [_parse_event(e) for e in package.get("eventSet", [])]
         # Events are newest-first from Bring
         status = events[0].status if events else ShipmentStatus.UNKNOWN
@@ -90,8 +93,8 @@ def _parse_consignment(consignment: dict) -> list[Shipment]:
                 tracking_id=tracking_id,
                 carrier=Carrier.BRING,
                 status=status,
-                sender=sender,
-                recipient=recipient,
+                sender=pkg_sender,
+                recipient=pkg_recipient,
                 estimated_delivery=estimated_delivery,
                 events=events,
                 raw_data=package,
@@ -179,6 +182,14 @@ class BringApiClient:
             raise CarrierNotFoundError(f"No shipment found for {tracking_id}")
 
         consignment = consignment_set[0]
+
+        _LOGGER.debug(
+            "Bring consignment keys for %s: %s (sender=%s, recipient=%s)",
+            tracking_id,
+            list(consignment.keys()),
+            consignment.get("senderName"),
+            consignment.get("recipientName"),
+        )
 
         # Check for error response
         if "error" in consignment:
