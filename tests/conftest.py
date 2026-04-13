@@ -13,6 +13,8 @@ try:
 except ImportError:
     _HAS_HOMEASSISTANT = False
 
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.nordic_parcel.const import (
     CONF_API_KEY,
     CONF_API_UID,
@@ -27,9 +29,7 @@ from custom_components.nordic_parcel.const import (
 @pytest.fixture
 def mock_bring_config_entry(hass):
     """Create a mock Bring config entry."""
-    from homeassistant.config_entries import ConfigEntry
-
-    entry = ConfigEntry(
+    entry = MockConfigEntry(
         version=1,
         minor_version=1,
         domain=DOMAIN,
@@ -49,9 +49,7 @@ def mock_bring_config_entry(hass):
 @pytest.fixture
 def mock_postnord_config_entry(hass):
     """Create a mock Postnord config entry."""
-    from homeassistant.config_entries import ConfigEntry
-
-    entry = ConfigEntry(
+    entry = MockConfigEntry(
         version=1,
         minor_version=1,
         domain=DOMAIN,
@@ -70,9 +68,7 @@ def mock_postnord_config_entry(hass):
 @pytest.fixture
 def mock_helthjem_config_entry(hass):
     """Create a mock Helthjem config entry."""
-    from homeassistant.config_entries import ConfigEntry
-
-    entry = ConfigEntry(
+    entry = MockConfigEntry(
         version=1,
         minor_version=1,
         domain=DOMAIN,
