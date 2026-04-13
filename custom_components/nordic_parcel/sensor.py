@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import ClassVar
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -62,9 +63,7 @@ async def async_setup_entry(
 
     _async_add_new_entities()
 
-    entry.async_on_unload(
-        coordinator.async_add_listener(_async_add_new_entities)
-    )
+    entry.async_on_unload(coordinator.async_add_listener(_async_add_new_entities))
 
 
 class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntity):
@@ -72,7 +71,7 @@ class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntit
 
     _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = [s.value for s in ShipmentStatus]
+    _attr_options: ClassVar[list[str]] = [s.value for s in ShipmentStatus]
     _attr_translation_key = "parcel"
 
     def __init__(
@@ -132,9 +131,7 @@ class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntit
             "sender": shipment.sender,
             "recipient": shipment.recipient,
             "estimated_delivery": (
-                shipment.estimated_delivery.isoformat()
-                if shipment.estimated_delivery
-                else None
+                shipment.estimated_delivery.isoformat() if shipment.estimated_delivery else None
             ),
             "event_count": len(shipment.events),
         }

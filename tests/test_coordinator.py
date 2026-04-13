@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pytest
-
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.nordic_parcel.api import (
-    CarrierAuthError,
     CarrierApiError,
+    CarrierAuthError,
     CarrierNotFoundError,
     CarrierRateLimitError,
     Shipment,
@@ -23,7 +22,6 @@ from custom_components.nordic_parcel.const import (
     CONF_CLEANUP_DAYS,
     CONF_DELIVERED_TIMESTAMPS,
     CONF_MANUAL_TRACKING,
-    CONF_SCAN_INTERVAL,
     DOMAIN,
     Carrier,
     ShipmentStatus,
@@ -44,7 +42,7 @@ def _make_shipment(
         sender=sender,
         events=[
             TrackingEvent(
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 description="Test event",
                 status=status,
             )
@@ -71,9 +69,7 @@ def coordinator(hass: HomeAssistant, mock_bring_config_entry, mock_client):
 # --- _async_update_data tests ---
 
 
-async def test_update_no_tracking_ids(
-    hass: HomeAssistant, coordinator, mock_client
-):
+async def test_update_no_tracking_ids(hass: HomeAssistant, coordinator, mock_client):
     """Test update with no manual tracking IDs returns empty dict."""
     result = await coordinator._async_update_data()
     assert result == {}
@@ -314,9 +310,7 @@ async def test_delivered_event_fired_on_delivery(
     assert len(delivered_events) == 0
 
     # Second poll: DELIVERED
-    mock_client.track_shipment.return_value = [
-        _make_shipment("TRACK001", ShipmentStatus.DELIVERED)
-    ]
+    mock_client.track_shipment.return_value = [_make_shipment("TRACK001", ShipmentStatus.DELIVERED)]
     await coordinator._async_update_data()
     await hass.async_block_till_done()
 
@@ -345,9 +339,7 @@ async def test_delivered_event_not_fired_twice(
     coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
 
     # Two polls with DELIVERED status
-    mock_client.track_shipment.return_value = [
-        _make_shipment("TRACK001", ShipmentStatus.DELIVERED)
-    ]
+    mock_client.track_shipment.return_value = [_make_shipment("TRACK001", ShipmentStatus.DELIVERED)]
     await coordinator._async_update_data()
     await coordinator._async_update_data()
     await hass.async_block_till_done()
@@ -364,7 +356,7 @@ async def test_auto_cleanup_removes_expired_delivered_parcels(
     mock_client,
 ):
     """Test that delivered parcels are removed after cleanup_days."""
-    delivered_time = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    delivered_time = (datetime.now(UTC) - timedelta(days=5)).isoformat()
 
     hass.config_entries.async_update_entry(
         mock_bring_config_entry,
@@ -376,9 +368,7 @@ async def test_auto_cleanup_removes_expired_delivered_parcels(
         options={CONF_CLEANUP_DAYS: 3},
     )
 
-    mock_client.track_shipment.return_value = [
-        _make_shipment("OLD001", ShipmentStatus.DELIVERED)
-    ]
+    mock_client.track_shipment.return_value = [_make_shipment("OLD001", ShipmentStatus.DELIVERED)]
 
     coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
     result = await coordinator._async_update_data()
@@ -395,7 +385,7 @@ async def test_auto_cleanup_keeps_recent_delivered_parcels(
     mock_client,
 ):
     """Test that recently delivered parcels are kept."""
-    delivered_time = (datetime.now(timezone.utc) - timedelta(hours=12)).isoformat()
+    delivered_time = (datetime.now(UTC) - timedelta(hours=12)).isoformat()
 
     hass.config_entries.async_update_entry(
         mock_bring_config_entry,
@@ -407,9 +397,7 @@ async def test_auto_cleanup_keeps_recent_delivered_parcels(
         options={CONF_CLEANUP_DAYS: 3},
     )
 
-    mock_client.track_shipment.return_value = [
-        _make_shipment("NEW001", ShipmentStatus.DELIVERED)
-    ]
+    mock_client.track_shipment.return_value = [_make_shipment("NEW001", ShipmentStatus.DELIVERED)]
 
     coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
     result = await coordinator._async_update_data()
@@ -423,7 +411,7 @@ async def test_auto_cleanup_disabled_when_zero(
     mock_client,
 ):
     """Test that cleanup is disabled when cleanup_days is 0."""
-    delivered_time = (datetime.now(timezone.utc) - timedelta(days=100)).isoformat()
+    delivered_time = (datetime.now(UTC) - timedelta(days=100)).isoformat()
 
     hass.config_entries.async_update_entry(
         mock_bring_config_entry,
@@ -435,9 +423,7 @@ async def test_auto_cleanup_disabled_when_zero(
         options={CONF_CLEANUP_DAYS: 0},
     )
 
-    mock_client.track_shipment.return_value = [
-        _make_shipment("OLD001", ShipmentStatus.DELIVERED)
-    ]
+    mock_client.track_shipment.return_value = [_make_shipment("OLD001", ShipmentStatus.DELIVERED)]
 
     coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
     result = await coordinator._async_update_data()

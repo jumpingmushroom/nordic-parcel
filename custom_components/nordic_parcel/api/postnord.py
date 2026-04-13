@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import aiohttp
 
@@ -53,7 +54,7 @@ def _parse_event(event: dict) -> TrackingEvent:
     try:
         timestamp = datetime.fromisoformat(timestamp_str)
     except ValueError:
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
     location_data = event.get("location", {})
     location = location_data.get("displayName")
@@ -94,10 +95,8 @@ def _parse_shipment(shipment_data: dict) -> Shipment:
     estimated_delivery = None
     eta_str = shipment_data.get("estimatedTimeOfArrival")
     if eta_str:
-        try:
+        with contextlib.suppress(ValueError):
             estimated_delivery = datetime.fromisoformat(eta_str)
-        except ValueError:
-            pass
 
     return Shipment(
         tracking_id=tracking_id,
@@ -139,11 +138,9 @@ class PostnordApiClient:
                     },
                 )
             # 401/403 = bad key, anything else = key is valid
-            if resp.status in (401, 403):
-                return False
-            return True
-        except (aiohttp.ClientError, TimeoutError):
-            raise CarrierApiError("Could not connect to Postnord API")
+            return resp.status not in (401, 403)
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise CarrierApiError("Could not connect to Postnord API") from err
 
     async def get_shipments(self) -> list[Shipment]:
         """Postnord API doesn't support listing all shipments for an account.

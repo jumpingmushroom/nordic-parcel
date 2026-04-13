@@ -8,15 +8,15 @@ import aiohttp
 import pytest
 from aioresponses import aioresponses
 
-from tests.conftest import BRING_TRACKING_RESPONSE
 from custom_components.nordic_parcel.api import (
     CarrierApiError,
     CarrierAuthError,
     CarrierNotFoundError,
     CarrierRateLimitError,
 )
-from custom_components.nordic_parcel.api.bring import BASE_URL, BringApiClient, _map_status
+from custom_components.nordic_parcel.api.bring import BringApiClient, _map_status
 from custom_components.nordic_parcel.const import Carrier, ShipmentStatus
+from tests.conftest import BRING_TRACKING_RESPONSE
 
 # Pattern that matches the Bring base URL with any query parameters
 BRING_URL_PATTERN = re.compile(r"^https://api\.bring\.com/tracking/api/v2/tracking\.json")
@@ -133,11 +133,7 @@ class TestTrackShipment:
             with aioresponses() as m:
                 m.get(
                     BRING_URL_PATTERN,
-                    payload={
-                        "consignmentSet": [
-                            {"error": {"message": "No data found"}}
-                        ]
-                    },
+                    payload={"consignmentSet": [{"error": {"message": "No data found"}}]},
                 )
                 with pytest.raises(CarrierNotFoundError, match="No data found"):
                     await client.track_shipment("BADID")

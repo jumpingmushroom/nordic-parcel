@@ -37,9 +37,7 @@ async def async_get_config_entry_diagnostics(
                 "sender": "**REDACTED**" if shipment.sender else None,
                 "recipient": "**REDACTED**" if shipment.recipient else None,
                 "estimated_delivery": (
-                    shipment.estimated_delivery.isoformat()
-                    if shipment.estimated_delivery
-                    else None
+                    shipment.estimated_delivery.isoformat() if shipment.estimated_delivery else None
                 ),
                 "event_count": len(shipment.events),
                 "events": [

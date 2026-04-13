@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import UTC, datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -12,8 +12,8 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import (
-    CarrierAuthError,
     CarrierApiError,
+    CarrierAuthError,
     CarrierClient,
     CarrierNotFoundError,
     CarrierRateLimitError,
@@ -46,9 +46,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
         config_entry: NordicParcelConfigEntry,
         client: CarrierClient,
     ) -> None:
-        scan_interval = config_entry.options.get(
-            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
-        )
+        scan_interval = config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         super().__init__(
             hass,
             _LOGGER,
@@ -61,29 +59,23 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
         # Load persisted delivery timestamps
         self._delivered_timestamps: dict[str, datetime] = {}
         for tid, ts_str in config_entry.data.get(CONF_DELIVERED_TIMESTAMPS, {}).items():
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 self._delivered_timestamps[tid] = datetime.fromisoformat(ts_str)
-            except (ValueError, TypeError):
-                pass
         self._previous_statuses: dict[str, str] = {}
 
     @property
     def manual_tracking_ids(self) -> list[str]:
         """Return manually-added tracking IDs from config entry data."""
-        return list(
-            self.config_entry.data.get(CONF_MANUAL_TRACKING, {}).keys()
-        )
+        return list(self.config_entry.data.get(CONF_MANUAL_TRACKING, {}).keys())
 
     async def add_tracking(self, tracking_id: str) -> None:
         """Add a tracking number to manual tracking list."""
         tracking_id = tracking_id.upper()
         data = dict(self.config_entry.data)
         manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
-        manual[tracking_id] = {"added": datetime.now(timezone.utc).isoformat()}
+        manual[tracking_id] = {"added": datetime.now(UTC).isoformat()}
         data[CONF_MANUAL_TRACKING] = manual
-        self.hass.config_entries.async_update_entry(
-            self.config_entry, data=data
-        )
+        self.hass.config_entries.async_update_entry(self.config_entry, data=data)
         await self.async_request_refresh()
 
     async def remove_tracking(self, tracking_id: str) -> None:
@@ -93,9 +85,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
         manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
         manual.pop(tracking_id, None)
         data[CONF_MANUAL_TRACKING] = manual
-        self.hass.config_entries.async_update_entry(
-            self.config_entry, data=data
-        )
+        self.hass.config_entries.async_update_entry(self.config_entry, data=data)
         await self.async_request_refresh()
 
     async def _async_update_data(self) -> dict[str, Shipment]:
@@ -114,8 +104,8 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                 shipments[s.tracking_id] = s
         except CarrierAuthError as err:
             raise ConfigEntryAuthFailed from err
-        except CarrierRateLimitError:
-            raise UpdateFailed("Rate limited by carrier API")
+        except CarrierRateLimitError as err:
+            raise UpdateFailed("Rate limited by carrier API") from err
         except CarrierApiError as err:
             _LOGGER.warning("Failed to fetch account shipments: %s", err)
 
@@ -137,12 +127,13 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                     config_changed = True
                     _LOGGER.info(
                         "Replaced consignment %s with package(s): %s",
-                        tracking_id, ", ".join(result_ids),
+                        tracking_id,
+                        ", ".join(result_ids),
                     )
             except CarrierAuthError as err:
                 raise ConfigEntryAuthFailed from err
-            except CarrierRateLimitError:
-                raise UpdateFailed("Rate limited by carrier API")
+            except CarrierRateLimitError as err:
+                raise UpdateFailed("Rate limited by carrier API") from err
             except CarrierNotFoundError:
                 _LOGGER.debug("Tracking ID %s not found, skipping", tracking_id)
             except CarrierApiError as err:
@@ -169,7 +160,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
         for tid, shipment in shipments.items():
             if shipment.status == ShipmentStatus.DELIVERED:
                 if tid not in self._delivered_timestamps:
-                    self._delivered_timestamps[tid] = datetime.now(timezone.utc)
+                    self._delivered_timestamps[tid] = datetime.now(UTC)
                     config_changed = True
                     self.hass.bus.async_fire(
                         f"{DOMAIN}_delivered",
@@ -184,11 +175,9 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                     config_changed = True
 
         # 5. Auto-cleanup delivered parcels past the threshold
-        cleanup_days = self.config_entry.options.get(
-            CONF_CLEANUP_DAYS, DEFAULT_CLEANUP_DAYS
-        )
+        cleanup_days = self.config_entry.options.get(CONF_CLEANUP_DAYS, DEFAULT_CLEANUP_DAYS)
         if cleanup_days > 0:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             expired = [
                 tid
                 for tid, delivered_at in self._delivered_timestamps.items()
@@ -206,11 +195,8 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
         if config_changed:
             data[CONF_MANUAL_TRACKING] = manual
             data[CONF_DELIVERED_TIMESTAMPS] = {
-                tid: ts.isoformat()
-                for tid, ts in self._delivered_timestamps.items()
+                tid: ts.isoformat() for tid, ts in self._delivered_timestamps.items()
             }
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, data=data
-            )
+            self.hass.config_entries.async_update_entry(self.config_entry, data=data)
 
         return shipments

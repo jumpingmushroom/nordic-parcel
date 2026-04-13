@@ -2,17 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
-
 import pytest
-
-try:
-    from homeassistant.core import HomeAssistant
-
-    _HAS_HOMEASSISTANT = True
-except ImportError:
-    _HAS_HOMEASSISTANT = False
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.nordic_parcel.const import (

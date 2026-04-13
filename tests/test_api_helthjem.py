@@ -9,7 +9,6 @@ import aiohttp
 import pytest
 from aioresponses import aioresponses
 
-from tests.conftest import HELTHJEM_TOKEN_RESPONSE, HELTHJEM_TRACKING_RESPONSE
 from custom_components.nordic_parcel.api import (
     CarrierApiError,
     CarrierAuthError,
@@ -17,20 +16,19 @@ from custom_components.nordic_parcel.api import (
     CarrierRateLimitError,
 )
 from custom_components.nordic_parcel.api.helthjem import (
-    TRACKING_URL,
     TOKEN_URL,
+    TRACKING_URL,
     HelthjemApiClient,
     _map_event_code,
 )
 from custom_components.nordic_parcel.const import Carrier, ShipmentStatus
+from tests.conftest import HELTHJEM_TOKEN_RESPONSE, HELTHJEM_TRACKING_RESPONSE
 
 TRACKING_ID = "HJ-TEST-12345"
 EXPECTED_TRACK_URL = f"{TRACKING_URL}/{urllib.parse.quote(TRACKING_ID, safe='')}/EN/false"
 
 # Pattern that matches any Helthjem tracking URL
-HELTHJEM_TRACK_PATTERN = re.compile(
-    r"^https://api\.helthjem\.no/parcels/v1/tracking/fetch/"
-)
+HELTHJEM_TRACK_PATTERN = re.compile(r"^https://api\.helthjem\.no/parcels/v1/tracking/fetch/")
 
 
 @pytest.fixture

@@ -8,7 +8,6 @@ import aiohttp
 import pytest
 from aioresponses import aioresponses
 
-from tests.conftest import POSTNORD_TRACKING_RESPONSE
 from custom_components.nordic_parcel.api import (
     CarrierApiError,
     CarrierAuthError,
@@ -16,11 +15,11 @@ from custom_components.nordic_parcel.api import (
     CarrierRateLimitError,
 )
 from custom_components.nordic_parcel.api.postnord import (
-    BASE_URL,
     PostnordApiClient,
     _map_status,
 )
 from custom_components.nordic_parcel.const import Carrier, ShipmentStatus
+from tests.conftest import POSTNORD_TRACKING_RESPONSE
 
 # Pattern that matches the Postnord base URL with any query parameters
 POSTNORD_URL_PATTERN = re.compile(

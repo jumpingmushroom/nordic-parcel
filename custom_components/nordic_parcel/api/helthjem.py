@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import aiohttp
 
@@ -34,18 +34,18 @@ _EVENT_STATUS_MAP: dict[str, ShipmentStatus] = {
     # Booking
     "001": ShipmentStatus.PRE_TRANSIT,  # Transport booked
     # Transportation
-    "002": ShipmentStatus.IN_TRANSIT,   # Loaded
-    "003": ShipmentStatus.IN_TRANSIT,   # In transit
-    "004": ShipmentStatus.IN_TRANSIT,   # In transit
-    "006": ShipmentStatus.IN_TRANSIT,   # In transit
-    "062": ShipmentStatus.IN_TRANSIT,   # In transit
-    "063": ShipmentStatus.IN_TRANSIT,   # In transit
-    "104": ShipmentStatus.IN_TRANSIT,   # In transit
-    "148": ShipmentStatus.IN_TRANSIT,   # Delivered to service point
+    "002": ShipmentStatus.IN_TRANSIT,  # Loaded
+    "003": ShipmentStatus.IN_TRANSIT,  # In transit
+    "004": ShipmentStatus.IN_TRANSIT,  # In transit
+    "006": ShipmentStatus.IN_TRANSIT,  # In transit
+    "062": ShipmentStatus.IN_TRANSIT,  # In transit
+    "063": ShipmentStatus.IN_TRANSIT,  # In transit
+    "104": ShipmentStatus.IN_TRANSIT,  # In transit
+    "148": ShipmentStatus.IN_TRANSIT,  # Delivered to service point
     # Status — delivery
-    "013": ShipmentStatus.DELIVERED,    # Delivered
-    "015": ShipmentStatus.DELIVERED,    # Delivered
-    "057": ShipmentStatus.DELIVERED,    # Delivered
+    "013": ShipmentStatus.DELIVERED,  # Delivered
+    "015": ShipmentStatus.DELIVERED,  # Delivered
+    "057": ShipmentStatus.DELIVERED,  # Delivered
     # Status — out for delivery
     "060": ShipmentStatus.OUT_FOR_DELIVERY,
     "061": ShipmentStatus.OUT_FOR_DELIVERY,
@@ -111,7 +111,7 @@ def _parse_event(event: dict) -> TrackingEvent:
     try:
         timestamp = datetime.fromisoformat(timestamp_str)
     except ValueError:
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
     event_code = str(event.get("eventCode", event.get("code", "")))
     description = event.get("description", event.get("text", ""))
@@ -251,16 +251,18 @@ class HelthjemApiClient:
         events.sort(key=lambda e: e.timestamp, reverse=True)
         status = events[0].status if events else ShipmentStatus.UNKNOWN
 
-        return [Shipment(
-            tracking_id=tracking_id,
-            carrier=Carrier.HELTHJEM,
-            status=status,
-            sender=parcels[0].get("shop", {}).get("name") if parcels else None,
-            recipient=None,
-            estimated_delivery=None,
-            events=events,
-            raw_data=raw_data,
-        )]
+        return [
+            Shipment(
+                tracking_id=tracking_id,
+                carrier=Carrier.HELTHJEM,
+                status=status,
+                sender=parcels[0].get("shop", {}).get("name") if parcels else None,
+                recipient=None,
+                estimated_delivery=None,
+                events=events,
+                raw_data=raw_data,
+            )
+        ]
 
     async def close(self) -> None:
         """No-op — session lifecycle managed externally."""

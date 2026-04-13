@@ -6,7 +6,6 @@ from custom_components.nordic_parcel.diagnostics import _mask_tracking_id
 
 
 class TestMaskTrackingId:
-
     def test_masks_long_id(self):
         assert _mask_tracking_id("370000000000123456") == "**************3456"
 

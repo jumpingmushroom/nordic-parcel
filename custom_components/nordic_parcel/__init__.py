@@ -6,7 +6,6 @@ import logging
 from datetime import timedelta
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -38,9 +37,7 @@ SERVICE_REMOVE_TRACKING = "remove_tracking"
 SERVICE_ADD_SCHEMA = vol.Schema(
     {
         vol.Required("tracking_id"): str,
-        vol.Optional("carrier"): vol.In(
-            [Carrier.BRING, Carrier.POSTNORD, Carrier.HELTHJEM]
-        ),
+        vol.Optional("carrier"): vol.In([Carrier.BRING, Carrier.POSTNORD, Carrier.HELTHJEM]),
     }
 )
 
@@ -108,8 +105,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Unregister services if no entries remain
     remaining = [
-        e for e in hass.config_entries.async_entries(DOMAIN)
-        if e.entry_id != entry.entry_id
+        e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id
     ]
     if not remaining:
         hass.services.async_remove(DOMAIN, SERVICE_ADD_TRACKING)
@@ -133,14 +129,10 @@ def _register_services(hass: HomeAssistant) -> None:
         ]
 
         if carrier_filter:
-            coordinators = [
-                c for c in coordinators if c.client.carrier == carrier_filter
-            ]
+            coordinators = [c for c in coordinators if c.client.carrier == carrier_filter]
 
         if not coordinators:
-            _LOGGER.error(
-                "No matching carrier configured for tracking %s", tracking_id
-            )
+            _LOGGER.error("No matching carrier configured for tracking %s", tracking_id)
             return
 
         await coordinators[0].add_tracking(tracking_id)

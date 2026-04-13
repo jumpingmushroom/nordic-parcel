@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any
 
-import hashlib
-
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import CarrierAuthError, CarrierApiError
+from .api import CarrierApiError
 from .api.bring import BringApiClient
 from .api.helthjem import HelthjemApiClient
 from .api.postnord import PostnordApiClient
@@ -39,9 +37,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the carrier selection step."""
         if user_input is not None:
             self._carrier = Carrier(user_input[CONF_CARRIER])
@@ -66,22 +62,16 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
         )
 
-    async def async_step_bring(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_bring(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle Bring credentials."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             session = async_get_clientsession(self.hass)
-            client = BringApiClient(
-                session, user_input[CONF_API_UID], user_input[CONF_API_KEY]
-            )
+            client = BringApiClient(session, user_input[CONF_API_UID], user_input[CONF_API_KEY])
             try:
                 if await client.authenticate():
-                    await self.async_set_unique_id(
-                        f"bring_{user_input[CONF_API_UID]}"
-                    )
+                    await self.async_set_unique_id(f"bring_{user_input[CONF_API_UID]}")
                     self._abort_if_unique_id_configured()
                     return self.async_create_entry(
                         title=f"Bring ({user_input[CONF_API_UID]})",
@@ -104,9 +94,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
-            description_placeholders={
-                "docs_url": "https://developer.bring.com/api/tracking/"
-            },
+            description_placeholders={"docs_url": "https://developer.bring.com/api/tracking/"},
         )
 
     async def async_step_postnord(
@@ -143,9 +131,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
-            description_placeholders={
-                "docs_url": "https://developer.postnord.com/"
-            },
+            description_placeholders={"docs_url": "https://developer.postnord.com/"},
         )
 
     async def async_step_helthjem(
@@ -186,14 +172,10 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
-            description_placeholders={
-                "docs_url": "https://developer.helthjem.no/"
-            },
+            description_placeholders={"docs_url": "https://developer.helthjem.no/"},
         )
 
-    async def async_step_reauth(
-        self, entry_data: dict[str, Any]
-    ) -> ConfigFlowResult:
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Handle reauthentication."""
         self._reauth_entry = self._get_reauth_entry()
         carrier = Carrier(entry_data[CONF_CARRIER])
@@ -212,9 +194,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             session = async_get_clientsession(self.hass)
-            client = BringApiClient(
-                session, user_input[CONF_API_UID], user_input[CONF_API_KEY]
-            )
+            client = BringApiClient(session, user_input[CONF_API_UID], user_input[CONF_API_KEY])
             try:
                 if await client.authenticate():
                     return self.async_update_reload_and_abort(
@@ -328,9 +308,7 @@ class NordicParcelConfigFlow(ConfigFlow, domain=DOMAIN):
 class NordicParcelOptionsFlow(OptionsFlow):
     """Handle options for Nordic Parcel."""
 
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage integration options."""
         if user_input is not None:
             return self.async_create_entry(data=user_input)

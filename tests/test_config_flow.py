@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
-
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
+from custom_components.nordic_parcel.api import CarrierApiError
 from custom_components.nordic_parcel.const import (
     CONF_API_KEY,
     CONF_API_UID,
@@ -18,12 +17,9 @@ from custom_components.nordic_parcel.const import (
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_SCAN_INTERVAL,
-    DEFAULT_CLEANUP_DAYS,
-    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     Carrier,
 )
-from custom_components.nordic_parcel.api import CarrierApiError
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -35,9 +31,7 @@ pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 async def test_user_step_shows_carrier_form(hass: HomeAssistant) -> None:
     """Test that the user step shows a carrier selection form."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
 
@@ -49,9 +43,7 @@ async def test_user_step_shows_carrier_form(hass: HomeAssistant) -> None:
 
 async def test_bring_flow_success(hass: HomeAssistant) -> None:
     """Test successful Bring config flow creates an entry."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     with patch(
         "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
@@ -84,9 +76,7 @@ async def test_bring_flow_success(hass: HomeAssistant) -> None:
 
 async def test_bring_flow_auth_failure(hass: HomeAssistant) -> None:
     """Test Bring flow shows error on invalid credentials."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -112,9 +102,7 @@ async def test_bring_flow_auth_failure(hass: HomeAssistant) -> None:
 
 async def test_bring_flow_connection_error(hass: HomeAssistant) -> None:
     """Test Bring flow shows error on connection failure."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -145,9 +133,7 @@ async def test_bring_flow_connection_error(hass: HomeAssistant) -> None:
 
 async def test_postnord_flow_success(hass: HomeAssistant) -> None:
     """Test successful Postnord config flow creates an entry."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     with patch(
         "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
@@ -173,9 +159,7 @@ async def test_postnord_flow_success(hass: HomeAssistant) -> None:
 
 async def test_postnord_flow_auth_failure(hass: HomeAssistant) -> None:
     """Test Postnord flow shows error on invalid credentials."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -198,9 +182,7 @@ async def test_postnord_flow_auth_failure(hass: HomeAssistant) -> None:
 
 async def test_postnord_flow_connection_error(hass: HomeAssistant) -> None:
     """Test Postnord flow shows error on connection failure."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -228,9 +210,7 @@ async def test_postnord_flow_connection_error(hass: HomeAssistant) -> None:
 
 async def test_helthjem_flow_success(hass: HomeAssistant) -> None:
     """Test successful Helthjem config flow creates an entry."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     with patch(
         "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
@@ -260,9 +240,7 @@ async def test_helthjem_flow_success(hass: HomeAssistant) -> None:
 
 async def test_helthjem_flow_auth_failure(hass: HomeAssistant) -> None:
     """Test Helthjem flow shows error on invalid credentials."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -288,9 +266,7 @@ async def test_helthjem_flow_auth_failure(hass: HomeAssistant) -> None:
 
 async def test_helthjem_flow_connection_error(hass: HomeAssistant) -> None:
     """Test Helthjem flow shows error on connection failure."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": "user"}
-    )
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -323,9 +299,7 @@ async def test_options_flow(hass: HomeAssistant, mock_bring_config_entry) -> Non
     """Test the options flow allows changing scan_interval and cleanup_days."""
     entry = mock_bring_config_entry
 
-    with patch(
-        "custom_components.nordic_parcel.async_setup_entry", return_value=True
-    ):
+    with patch("custom_components.nordic_parcel.async_setup_entry", return_value=True):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 

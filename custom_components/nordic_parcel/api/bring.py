@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from datetime import datetime
 
@@ -79,13 +80,9 @@ def _format_address_city(address: dict | None) -> str | None:
 def _parse_consignment(consignment: dict) -> list[Shipment]:
     """Parse a Bring consignment into one Shipment per package."""
     shipments: list[Shipment] = []
-    sender = (
-        consignment.get("senderName")
-        or _format_address_city(consignment.get("senderAddress"))
-    )
-    recipient = (
-        consignment.get("recipientName")
-        or _format_address_city(consignment.get("recipientAddress"))
+    sender = consignment.get("senderName") or _format_address_city(consignment.get("senderAddress"))
+    recipient = consignment.get("recipientName") or _format_address_city(
+        consignment.get("recipientAddress")
     )
 
     for package in consignment.get("packageSet", []):
@@ -100,10 +97,8 @@ def _parse_consignment(consignment: dict) -> list[Shipment]:
         estimated_delivery = None
         date_str = package.get("dateOfEstimatedDelivery")
         if date_str:
-            try:
+            with contextlib.suppress(ValueError):
                 estimated_delivery = datetime.fromisoformat(date_str)
-            except ValueError:
-                pass
 
         shipments.append(
             Shipment(
@@ -156,14 +151,9 @@ class BringApiClient:
                     params={"q": "TESTPACKAGE00000"},
                     headers=self._headers(),
                 )
-            if resp.status == 401:
-                return False
-            if resp.status == 403:
-                return False
-            # 200 or 404-style responses in body mean auth succeeded
-            return True
-        except (aiohttp.ClientError, TimeoutError):
-            raise CarrierApiError("Could not connect to Bring API")
+            return resp.status not in (401, 403)
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise CarrierApiError("Could not connect to Bring API") from err
 
     async def get_shipments(self) -> list[Shipment]:
         """Bring API doesn't support listing all shipments for an account.
@@ -203,9 +193,7 @@ class BringApiClient:
         # Check for error response
         if "error" in consignment:
             error = consignment["error"]
-            raise CarrierNotFoundError(
-                error.get("message", f"Shipment {tracking_id} not found")
-            )
+            raise CarrierNotFoundError(error.get("message", f"Shipment {tracking_id} not found"))
 
         shipments = _parse_consignment(consignment)
         if not shipments:
