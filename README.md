@@ -6,11 +6,13 @@ Track parcels from Norwegian and Nordic carriers in Home Assistant.
 
 ## Supported Carriers
 
-| Carrier | Auth Type | Auto-fetch | Manual Tracking |
-|---------|-----------|------------|-----------------|
-| **Bring** (Posten Norge) | Mybring email + API key | — | Yes |
-| **Postnord** | API key | — | Yes |
-| **Helthjem** | OAuth2 (Client ID + Secret) | — | Yes |
+| Carrier | Auth Type | Manual Tracking |
+|---------|-----------|-----------------|
+| **Bring** (Posten Norge) | Mybring email + API key | Yes |
+| **Postnord** | API key | Yes |
+| **Helthjem** | OAuth2 (Client ID + Secret) | Yes |
+
+> **Note:** Auto-fetch (automatically discovering parcels from your account) is not supported — none of the carriers expose a public API for listing parcels tied to a consumer account. Tracking numbers must be added manually via the service call or dashboard card below.
 
 ## Installation
 
