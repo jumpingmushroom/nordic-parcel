@@ -8,6 +8,7 @@ from typing import ClassVar
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
@@ -30,7 +31,6 @@ async def async_setup_entry(
     coordinator: NordicParcelCoordinator = entry.runtime_data
 
     known_ids: set[str] = set()
-    entity_id_map: dict[str, str] = {}
 
     @callback
     def _async_add_new_entities() -> None:
@@ -51,16 +51,14 @@ async def async_setup_entry(
         if removed:
             registry = er.async_get(hass)
             for tracking_id in removed:
-                entity_id = entity_id_map.pop(tracking_id, None)
-                if entity_id and registry.async_get(entity_id):
+                unique_id = f"{DOMAIN}_{tracking_id}"
+                entity_id = registry.async_get_entity_id(Platform.SENSOR, DOMAIN, unique_id)
+                if entity_id:
                     registry.async_remove(entity_id)
             known_ids.difference_update(removed)
 
         if new_entities:
             async_add_entities(new_entities)
-            for sensor in new_entities:
-                if sensor.entity_id:
-                    entity_id_map[sensor._tracking_id] = sensor.entity_id
 
     _async_add_new_entities()
 
@@ -234,4 +232,6 @@ class NordicParcelSummarySensor(SensorEntity):
             unsub()
         self._unsub_listeners.clear()
         domain_data = self.hass.data.get(DOMAIN, {})
-        domain_data.pop("summary_entity", None)
+        # Only clear from domain_data if no coordinators remain
+        if not domain_data.get("coordinators"):
+            domain_data.pop("summary_entity", None)

@@ -118,6 +118,14 @@
       }
     }
   },
+  "exceptions": {
+    "no_matching_carrier": {
+      "message": "Ingen matchende transportør konfigurert for sporing {tracking_id}."
+    },
+    "tracking_not_found": {
+      "message": "Sporings-ID {tracking_id} ble ikke funnet hos noen transportør."
+    }
+  },
   "services": {
     "add_tracking": {
       "name": "Legg til sporing",

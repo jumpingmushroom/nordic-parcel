@@ -15,7 +15,7 @@ from custom_components.nordic_parcel.const import (
     ShipmentStatus,
 )
 from custom_components.nordic_parcel.coordinator import NordicParcelCoordinator
-from custom_components.nordic_parcel.sensor import NordicParcelSummarySensor
+from custom_components.nordic_parcel.sensor import NordicParcelSensor, NordicParcelSummarySensor
 
 
 def _make_shipment(
@@ -47,6 +47,93 @@ def _mock_client(carrier: Carrier = Carrier.BRING) -> AsyncMock:
     client.get_shipments = AsyncMock(return_value=[])
     client.track_shipment = AsyncMock(return_value=[])
     return client
+
+
+# --- Parcel sensor tests ---
+
+
+class TestParcelSensor:
+    """Tests for NordicParcelSensor."""
+
+    async def test_sensor_unique_id(self, hass: HomeAssistant, mock_bring_config_entry):
+        """Test sensor unique_id format."""
+        client = _mock_client()
+        coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, client)
+        coordinator.data = {"TRACK123": _make_shipment("TRACK123")}
+
+        sensor = NordicParcelSensor(coordinator, "TRACK123")
+        assert sensor.unique_id == f"{DOMAIN}_TRACK123"
+
+    async def test_sensor_name_with_sender(self, hass: HomeAssistant, mock_bring_config_entry):
+        """Test sensor name includes sender and last 6 of tracking ID."""
+        client = _mock_client()
+        coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, client)
+        coordinator.data = {"ABCDEF123456": _make_shipment("ABCDEF123456", sender="Komplett")}
+
+        sensor = NordicParcelSensor(coordinator, "ABCDEF123456")
+        assert sensor.name == "Komplett (123456)"
+
+    async def test_sensor_name_without_sender(self, hass: HomeAssistant, mock_bring_config_entry):
+        """Test sensor name falls back to tracking ID when no sender."""
+        client = _mock_client()
+        coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, client)
+        shipment = _make_shipment("TRACK789")
+        shipment.sender = None
+        coordinator.data = {"TRACK789": shipment}
+
+        sensor = NordicParcelSensor(coordinator, "TRACK789")
+        assert sensor.name == "TRACK789"
+
+    async def test_sensor_native_value(self, hass: HomeAssistant, mock_bring_config_entry):
+        """Test sensor state returns status value."""
+        client = _mock_client()
+        coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, client)
+        coordinator.data = {"T1": _make_shipment("T1", ShipmentStatus.OUT_FOR_DELIVERY)}
+
+        sensor = NordicParcelSensor(coordinator, "T1")
+        assert sensor.native_value == "out_for_delivery"
+
+    async def test_sensor_unavailable_no_data(self, hass: HomeAssistant, mock_bring_config_entry):
+        """Test sensor is unavailable when shipment not in coordinator data."""
+        client = _mock_client()
+        coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, client)
+        coordinator.data = {}
+        coordinator.last_update_success = True
+
+        sensor = NordicParcelSensor(coordinator, "MISSING")
+        assert sensor.available is False
+
+    async def test_sensor_extra_state_attributes(
+        self, hass: HomeAssistant, mock_bring_config_entry
+    ):
+        """Test sensor exposes all expected attributes."""
+        client = _mock_client()
+        coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, client)
+        shipment = _make_shipment("ATTR001", sender="TestSender AS")
+        shipment.recipient = "Test Recipient"
+        coordinator.data = {"ATTR001": shipment}
+
+        sensor = NordicParcelSensor(coordinator, "ATTR001")
+        attrs = sensor.extra_state_attributes
+
+        assert attrs["carrier"] == Carrier.BRING.value
+        assert attrs["tracking_id"] == "ATTR001"
+        assert attrs["sender"] == "TestSender AS"
+        assert attrs["recipient"] == "Test Recipient"
+        assert attrs["event_count"] == 1
+        assert "last_event_description" in attrs
+        assert "last_event_time" in attrs
+
+    async def test_sensor_device_info(self, hass: HomeAssistant, mock_bring_config_entry):
+        """Test sensor device info references correct carrier."""
+        client = _mock_client()
+        coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, client)
+        coordinator.data = {"T1": _make_shipment("T1")}
+
+        sensor = NordicParcelSensor(coordinator, "T1")
+        assert sensor.device_info["manufacturer"] == "Bring"
+        assert sensor.device_info["model"] == "Parcel Tracking"
+        assert (DOMAIN, mock_bring_config_entry.entry_id) in sensor.device_info["identifiers"]
 
 
 # --- Summary sensor tests ---

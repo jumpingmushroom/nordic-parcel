@@ -6,9 +6,10 @@ import logging
 from datetime import timedelta
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -37,14 +38,14 @@ SERVICE_REMOVE_TRACKING = "remove_tracking"
 
 SERVICE_ADD_SCHEMA = vol.Schema(
     {
-        vol.Required("tracking_id"): str,
+        vol.Required("tracking_id"): vol.All(str, vol.Strip, vol.Length(min=1)),
         vol.Optional("carrier"): vol.In([Carrier.BRING, Carrier.POSTNORD, Carrier.HELTHJEM]),
     }
 )
 
 SERVICE_REMOVE_SCHEMA = vol.Schema(
     {
-        vol.Required("tracking_id"): str,
+        vol.Required("tracking_id"): vol.All(str, vol.Strip, vol.Length(min=1)),
     }
 )
 
@@ -73,6 +74,12 @@ def _create_client(
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Nordic Parcel from a config entry."""
+    # Register services early (once, when first entry loads)
+    # so they're available even if this entry's first refresh fails
+    hass.data.setdefault(DOMAIN, {"coordinators": {}})
+    if not hass.services.has_service(DOMAIN, SERVICE_ADD_TRACKING):
+        _register_services(hass)
+
     client = _create_client(hass, entry)
     coordinator = NordicParcelCoordinator(hass, entry, client)
 
@@ -84,14 +91,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.runtime_data = coordinator
 
     # Register coordinator in shared registry for cross-entry aggregation
-    domain_data = hass.data.setdefault(DOMAIN, {"coordinators": {}})
+    domain_data = hass.data[DOMAIN]
     domain_data["coordinators"][entry.entry_id] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    # Register services (once, when first entry loads)
-    if not hass.services.has_service(DOMAIN, SERVICE_ADD_TRACKING):
-        _register_services(hass)
 
     # Listen for options changes to update scan interval
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
@@ -132,37 +135,46 @@ def _register_services(hass: HomeAssistant) -> None:
 
     async def handle_add_tracking(call: ServiceCall) -> None:
         """Handle the add_tracking service call."""
-        tracking_id = call.data["tracking_id"].upper()
+        tracking_id = call.data["tracking_id"].strip().upper()
         carrier_filter = call.data.get("carrier")
 
         coordinators: list[NordicParcelCoordinator] = [
             entry.runtime_data
             for entry in hass.config_entries.async_entries(DOMAIN)
-            if hasattr(entry, "runtime_data") and entry.runtime_data
+            if entry.state is ConfigEntryState.LOADED
         ]
 
         if carrier_filter:
             coordinators = [c for c in coordinators if c.client.carrier == carrier_filter]
 
         if not coordinators:
-            _LOGGER.error("No matching carrier configured for tracking %s", tracking_id)
-            return
+            raise ServiceValidationError(
+                f"No matching carrier configured for tracking {tracking_id}",
+                translation_domain=DOMAIN,
+                translation_key="no_matching_carrier",
+                translation_placeholders={"tracking_id": tracking_id},
+            )
 
         await coordinators[0].add_tracking(tracking_id)
 
     async def handle_remove_tracking(call: ServiceCall) -> None:
         """Handle the remove_tracking service call."""
-        tracking_id = call.data["tracking_id"].upper()
+        tracking_id = call.data["tracking_id"].strip().upper()
 
         for entry in hass.config_entries.async_entries(DOMAIN):
-            if not hasattr(entry, "runtime_data") or not entry.runtime_data:
+            if entry.state is not ConfigEntryState.LOADED:
                 continue
             coordinator: NordicParcelCoordinator = entry.runtime_data
             if tracking_id in coordinator.manual_tracking_ids:
                 await coordinator.remove_tracking(tracking_id)
                 return
 
-        _LOGGER.warning("Tracking ID %s not found in any carrier", tracking_id)
+        raise ServiceValidationError(
+            f"Tracking ID {tracking_id} not found in any carrier",
+            translation_domain=DOMAIN,
+            translation_key="tracking_not_found",
+            translation_placeholders={"tracking_id": tracking_id},
+        )
 
     hass.services.async_register(
         DOMAIN, SERVICE_ADD_TRACKING, handle_add_tracking, schema=SERVICE_ADD_SCHEMA

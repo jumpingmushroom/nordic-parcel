@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -69,8 +68,10 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
         # Load persisted delivery timestamps
         self._delivered_timestamps: dict[str, datetime] = {}
         for tid, ts_str in config_entry.data.get(CONF_DELIVERED_TIMESTAMPS, {}).items():
-            with contextlib.suppress(ValueError, TypeError):
+            try:
                 self._delivered_timestamps[tid] = datetime.fromisoformat(ts_str)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Invalid delivered timestamp for %s: %s", tid, ts_str)
         self._previous_statuses: dict[str, str] = {}
 
     @property
@@ -80,7 +81,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
 
     async def add_tracking(self, tracking_id: str) -> None:
         """Add a tracking number to manual tracking list."""
-        tracking_id = tracking_id.upper()
+        tracking_id = tracking_id.strip().upper()
         data = dict(self.config_entry.data)
         manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
         manual[tracking_id] = {"added": datetime.now(UTC).isoformat()}
@@ -90,7 +91,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
 
     async def remove_tracking(self, tracking_id: str) -> None:
         """Remove a tracking number from manual tracking list."""
-        tracking_id = tracking_id.upper()
+        tracking_id = tracking_id.strip().upper()
         data = dict(self.config_entry.data)
         manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
         manual.pop(tracking_id, None)
@@ -277,10 +278,13 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
 
         # 6. Batch-write config entry if anything changed
         if config_changed:
-            data[CONF_MANUAL_TRACKING] = manual
-            data[CONF_DELIVERED_TIMESTAMPS] = {
+            # Re-read config entry data to avoid overwriting concurrent changes
+            # from add_tracking/remove_tracking that ran during API calls above
+            fresh_data = dict(self.config_entry.data)
+            fresh_data[CONF_MANUAL_TRACKING] = manual
+            fresh_data[CONF_DELIVERED_TIMESTAMPS] = {
                 tid: ts.isoformat() for tid, ts in self._delivered_timestamps.items()
             }
-            self.hass.config_entries.async_update_entry(self.config_entry, data=data)
+            self.hass.config_entries.async_update_entry(self.config_entry, data=fresh_data)
 
         return shipments

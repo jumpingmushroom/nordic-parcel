@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from homeassistant import data_entry_flow
 from homeassistant.components.repairs import RepairsFlow
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 
@@ -20,7 +21,7 @@ class StaleTrackingRepairFlow(RepairsFlow):
         if user_input is not None:
             tracking_id = self.data["tracking_id"]
             for entry in self.hass.config_entries.async_entries(DOMAIN):
-                if not hasattr(entry, "runtime_data") or not entry.runtime_data:
+                if entry.state is not ConfigEntryState.LOADED:
                     continue
                 coordinator = entry.runtime_data
                 if tracking_id in (coordinator.data or {}):

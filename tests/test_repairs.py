@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
+from homeassistant import data_entry_flow
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import issue_registry as ir
@@ -18,6 +19,9 @@ from custom_components.nordic_parcel.const import (
     ShipmentStatus,
 )
 from custom_components.nordic_parcel.coordinator import NordicParcelCoordinator
+from custom_components.nordic_parcel.repairs import async_create_fix_flow
+
+pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 
 def _make_shipment(
@@ -259,6 +263,73 @@ async def test_auth_failed_issue_created_on_get_shipments(
     issue = issue_reg.async_get_issue(DOMAIN, f"auth_failed_{mock_bring_config_entry.entry_id}")
     assert issue is not None
     assert issue.severity == ir.IssueSeverity.ERROR
+
+
+# --- Repair flow execution tests ---
+
+
+async def test_repair_flow_confirm_removes_tracking(
+    hass: HomeAssistant, mock_bring_config_entry, mock_client
+):
+    """Test that confirming the repair flow removes stale tracking."""
+    from unittest.mock import patch as mock_patch
+
+    hass.config_entries.async_update_entry(
+        mock_bring_config_entry,
+        data={
+            **mock_bring_config_entry.data,
+            CONF_MANUAL_TRACKING: {"STALE999": {"added": "2026-03-01T00:00:00+00:00"}},
+        },
+    )
+
+    coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
+    coordinator.data = {"STALE999": _make_shipment("STALE999", event_age_days=15)}
+
+    # Set up the entry as if it were loaded
+    with mock_patch("custom_components.nordic_parcel._create_client", return_value=mock_client):
+        await hass.config_entries.async_setup(mock_bring_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    # Replace coordinator with our test one
+    mock_bring_config_entry.runtime_data = coordinator
+
+    # Create the issue
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        "stale_tracking_STALE999",
+        is_fixable=True,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="stale_tracking",
+        translation_placeholders={"tracking_id": "STALE999", "carrier": "bring", "days": "15"},
+        data={"tracking_id": "STALE999", "carrier": "bring"},
+    )
+
+    flow = await async_create_fix_flow(
+        hass, "stale_tracking_STALE999", {"tracking_id": "STALE999", "carrier": "bring"}
+    )
+    flow.hass = hass
+    flow.issue_id = "stale_tracking_STALE999"
+
+    # Show form
+    result = await flow.async_step_init()
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+
+    # Confirm removal
+    with mock_patch.object(coordinator, "remove_tracking", new_callable=AsyncMock) as mock_remove:
+        result = await flow.async_step_init(user_input={})
+        mock_remove.assert_awaited_once_with("STALE999")
+
+    assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
+    # Issue should be deleted
+    issue_reg = ir.async_get(hass)
+    assert issue_reg.async_get_issue(DOMAIN, "stale_tracking_STALE999") is None
+
+
+async def test_unknown_issue_raises_handler(hass: HomeAssistant):
+    """Test that unknown issue IDs raise UnknownHandler."""
+    with pytest.raises(data_entry_flow.UnknownHandler):
+        await async_create_fix_flow(hass, "some_other_issue", {})
 
 
 async def test_auth_failed_issue_created_on_track_shipment(

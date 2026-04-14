@@ -30,11 +30,12 @@ class Shipment:
     recipient: str | None = None
     estimated_delivery: datetime | None = None
     events: list[TrackingEvent] = field(default_factory=list)
+    """Tracking events ordered newest-first. Carrier clients must sort before returning."""
     raw_data: dict = field(default_factory=dict)
 
     @property
     def last_event(self) -> TrackingEvent | None:
-        """Return the most recent tracking event."""
+        """Return the most recent tracking event (first in newest-first list)."""
         return self.events[0] if self.events else None
 
 

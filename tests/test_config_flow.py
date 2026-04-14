@@ -324,6 +324,247 @@ async def test_helthjem_flow_connection_error(hass: HomeAssistant) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Reauth flows
+# ---------------------------------------------------------------------------
+
+
+async def test_reauth_bring_success(hass: HomeAssistant, mock_bring_config_entry) -> None:
+    """Test successful Bring reauthentication updates the entry."""
+    with patch(MOCK_SETUP, return_value=True):
+        await hass.config_entries.async_setup(mock_bring_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await mock_bring_config_entry.start_reauth_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reauth_bring"
+
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(MOCK_SETUP, return_value=True),
+        patch(
+            "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
+            return_value=True,
+        ),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_API_UID: "new@example.com", CONF_API_KEY: "new-key"},
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert mock_bring_config_entry.data[CONF_API_UID] == "new@example.com"
+    assert mock_bring_config_entry.data[CONF_API_KEY] == "new-key"
+
+
+async def test_reauth_bring_invalid_auth(hass: HomeAssistant, mock_bring_config_entry) -> None:
+    """Test Bring reauth shows error on invalid credentials."""
+    with patch(MOCK_SETUP, return_value=True):
+        await hass.config_entries.async_setup(mock_bring_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await mock_bring_config_entry.start_reauth_flow(hass)
+
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
+            return_value=False,
+        ),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_API_UID: "bad@example.com", CONF_API_KEY: "bad-key"},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_auth"}
+
+
+async def test_reauth_bring_cannot_connect(hass: HomeAssistant, mock_bring_config_entry) -> None:
+    """Test Bring reauth shows error on connection failure."""
+    with patch(MOCK_SETUP, return_value=True):
+        await hass.config_entries.async_setup(mock_bring_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await mock_bring_config_entry.start_reauth_flow(hass)
+
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
+            side_effect=CarrierApiError("Connection failed"),
+        ),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_API_UID: "test@example.com", CONF_API_KEY: "test-key"},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+async def test_reauth_postnord_success(hass: HomeAssistant, mock_postnord_config_entry) -> None:
+    """Test successful Postnord reauthentication updates the entry."""
+    with patch(MOCK_SETUP, return_value=True):
+        await hass.config_entries.async_setup(mock_postnord_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await mock_postnord_config_entry.start_reauth_flow(hass)
+    assert result["step_id"] == "reauth_postnord"
+
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(MOCK_SETUP, return_value=True),
+        patch(
+            "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
+            return_value=True,
+        ),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_API_KEY: "new-postnord-key"},
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert mock_postnord_config_entry.data[CONF_API_KEY] == "new-postnord-key"
+
+
+async def test_reauth_postnord_invalid_auth(
+    hass: HomeAssistant, mock_postnord_config_entry
+) -> None:
+    """Test Postnord reauth shows error on invalid credentials."""
+    with patch(MOCK_SETUP, return_value=True):
+        await hass.config_entries.async_setup(mock_postnord_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await mock_postnord_config_entry.start_reauth_flow(hass)
+
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
+            return_value=False,
+        ),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_API_KEY: "bad-key"},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_auth"}
+
+
+async def test_reauth_postnord_cannot_connect(
+    hass: HomeAssistant, mock_postnord_config_entry
+) -> None:
+    """Test Postnord reauth shows error on connection failure."""
+    with patch(MOCK_SETUP, return_value=True):
+        await hass.config_entries.async_setup(mock_postnord_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await mock_postnord_config_entry.start_reauth_flow(hass)
+
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
+            side_effect=CarrierApiError("Connection failed"),
+        ),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_API_KEY: "some-key"},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+async def test_reauth_helthjem_success(hass: HomeAssistant, mock_helthjem_config_entry) -> None:
+    """Test successful Helthjem reauthentication updates the entry."""
+    with patch(MOCK_SETUP, return_value=True):
+        await hass.config_entries.async_setup(mock_helthjem_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await mock_helthjem_config_entry.start_reauth_flow(hass)
+    assert result["step_id"] == "reauth_helthjem"
+
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(MOCK_SETUP, return_value=True),
+        patch(
+            "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
+            return_value=True,
+        ),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_CLIENT_ID: "new-client-id", CONF_CLIENT_SECRET: "new-secret"},
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert mock_helthjem_config_entry.data[CONF_CLIENT_ID] == "new-client-id"
+    assert mock_helthjem_config_entry.data[CONF_CLIENT_SECRET] == "new-secret"
+
+
+async def test_reauth_helthjem_invalid_auth(
+    hass: HomeAssistant, mock_helthjem_config_entry
+) -> None:
+    """Test Helthjem reauth shows error on invalid credentials."""
+    with patch(MOCK_SETUP, return_value=True):
+        await hass.config_entries.async_setup(mock_helthjem_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await mock_helthjem_config_entry.start_reauth_flow(hass)
+
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
+            return_value=False,
+        ),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_CLIENT_ID: "bad-id", CONF_CLIENT_SECRET: "bad-secret"},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_auth"}
+
+
+async def test_reauth_helthjem_cannot_connect(
+    hass: HomeAssistant, mock_helthjem_config_entry
+) -> None:
+    """Test Helthjem reauth shows error on connection failure."""
+    with patch(MOCK_SETUP, return_value=True):
+        await hass.config_entries.async_setup(mock_helthjem_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await mock_helthjem_config_entry.start_reauth_flow(hass)
+
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
+            side_effect=CarrierApiError("Connection failed"),
+        ),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_CLIENT_ID: "some-id", CONF_CLIENT_SECRET: "some-secret"},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+# ---------------------------------------------------------------------------
 # Options flow
 # ---------------------------------------------------------------------------
 

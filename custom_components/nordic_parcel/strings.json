@@ -118,6 +118,14 @@
       }
     }
   },
+  "exceptions": {
+    "no_matching_carrier": {
+      "message": "No matching carrier configured for tracking {tracking_id}."
+    },
+    "tracking_not_found": {
+      "message": "Tracking ID {tracking_id} not found in any carrier."
+    }
+  },
   "services": {
     "add_tracking": {
       "name": "Add tracking",
