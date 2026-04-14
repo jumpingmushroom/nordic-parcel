@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import (
@@ -31,6 +32,15 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Statuses that fire a dedicated event in addition to the generic status_changed event
+_GRANULAR_EVENTS: dict[ShipmentStatus, str] = {
+    ShipmentStatus.OUT_FOR_DELIVERY: f"{DOMAIN}_out_for_delivery",
+    ShipmentStatus.READY_FOR_PICKUP: f"{DOMAIN}_ready_for_pickup",
+    ShipmentStatus.RETURNED: f"{DOMAIN}_returned",
+    ShipmentStatus.FAILED: f"{DOMAIN}_failed",
+    ShipmentStatus.CUSTOMS: f"{DOMAIN}_customs",
+}
 
 type NordicParcelConfigEntry = ConfigEntry[NordicParcelCoordinator]
 
@@ -103,6 +113,15 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
             for s in account_shipments:
                 shipments[s.tracking_id] = s
         except CarrierAuthError as err:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                f"auth_failed_{self.config_entry.entry_id}",
+                is_fixable=False,
+                severity=ir.IssueSeverity.ERROR,
+                translation_key="auth_failed",
+                translation_placeholders={"carrier": self.client.carrier.value},
+            )
             raise ConfigEntryAuthFailed from err
         except CarrierRateLimitError as err:
             raise UpdateFailed("Rate limited by carrier API") from err
@@ -131,6 +150,15 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                         ", ".join(result_ids),
                     )
             except CarrierAuthError as err:
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    f"auth_failed_{self.config_entry.entry_id}",
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.ERROR,
+                    translation_key="auth_failed",
+                    translation_placeholders={"carrier": self.client.carrier.value},
+                )
                 raise ConfigEntryAuthFailed from err
             except CarrierRateLimitError as err:
                 raise UpdateFailed("Rate limited by carrier API") from err
@@ -144,17 +172,73 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
             old_status = self._previous_statuses.get(tid)
             new_status = shipment.status.value
             if old_status is not None and old_status != new_status:
+                event_data = {
+                    "tracking_id": tid,
+                    "carrier": shipment.carrier.value,
+                    "sender": shipment.sender,
+                    "old_status": old_status,
+                    "new_status": new_status,
+                }
                 self.hass.bus.async_fire(
                     f"{DOMAIN}_status_changed",
-                    {
+                    event_data,
+                )
+                # Fire granular event for specific status transitions
+                granular_event = _GRANULAR_EVENTS.get(shipment.status)
+                if granular_event:
+                    self.hass.bus.async_fire(granular_event, event_data)
+            self._previous_statuses[tid] = new_status
+
+        # 3.5 Detect repair issues
+        now = datetime.now(UTC)
+        for tid, shipment in shipments.items():
+            # Stale tracking: no update for 14+ days, not delivered
+            stale_issue_id = f"stale_tracking_{tid}"
+            last = shipment.last_event
+            if (
+                last
+                and shipment.status != ShipmentStatus.DELIVERED
+                and (now - last.timestamp).days >= 14
+            ):
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    stale_issue_id,
+                    is_fixable=True,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key="stale_tracking",
+                    translation_placeholders={
                         "tracking_id": tid,
                         "carrier": shipment.carrier.value,
-                        "sender": shipment.sender,
-                        "old_status": old_status,
-                        "new_status": new_status,
+                        "days": str((now - last.timestamp).days),
+                    },
+                    data={"tracking_id": tid, "carrier": shipment.carrier.value},
+                )
+            else:
+                ir.async_delete_issue(self.hass, DOMAIN, stale_issue_id)
+
+            # Stuck in customs: 7+ days
+            customs_issue_id = f"stuck_customs_{tid}"
+            if (
+                shipment.status == ShipmentStatus.CUSTOMS
+                and last
+                and (now - last.timestamp).days >= 7
+            ):
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    customs_issue_id,
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key="stuck_customs",
+                    translation_placeholders={
+                        "tracking_id": tid,
+                        "carrier": shipment.carrier.value,
+                        "days": str((now - last.timestamp).days),
                     },
                 )
-            self._previous_statuses[tid] = new_status
+            else:
+                ir.async_delete_issue(self.hass, DOMAIN, customs_issue_id)
 
         # 4. Track delivery timestamps
         for tid, shipment in shipments.items():

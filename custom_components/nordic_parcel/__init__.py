@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api.bring import BringApiClient
@@ -77,7 +78,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await coordinator.async_config_entry_first_refresh()
 
+    # Clear any auth issue from a previous failed attempt
+    ir.async_delete_issue(hass, DOMAIN, f"auth_failed_{entry.entry_id}")
+
     entry.runtime_data = coordinator
+
+    # Register coordinator in shared registry for cross-entry aggregation
+    domain_data = hass.data.setdefault(DOMAIN, {"coordinators": {}})
+    domain_data["coordinators"][entry.entry_id] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -103,13 +111,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    # Unregister services if no entries remain
+    # Remove coordinator from shared registry
+    if DOMAIN in hass.data:
+        hass.data[DOMAIN]["coordinators"].pop(entry.entry_id, None)
+
+    # Unregister services and clean up shared data if no entries remain
     remaining = [
         e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id
     ]
     if not remaining:
         hass.services.async_remove(DOMAIN, SERVICE_ADD_TRACKING)
         hass.services.async_remove(DOMAIN, SERVICE_REMOVE_TRACKING)
+        hass.data.pop(DOMAIN, None)
 
     return unload_ok
 

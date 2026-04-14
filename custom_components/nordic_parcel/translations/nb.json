@@ -76,13 +76,39 @@
       }
     }
   },
+  "issues": {
+    "stale_tracking": {
+      "title": "Foreldet sporing: {tracking_id}",
+      "description": "Pakke {tracking_id} ({carrier}) har ikke hatt en sporingsoppdatering på {days} dager. Vurder å fjerne den.",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Fjern foreldet sporing",
+            "description": "Pakke {tracking_id} ({carrier}) har ikke hatt oppdateringer på {days} dager. Fjerne den?"
+          }
+        }
+      }
+    },
+    "stuck_customs": {
+      "title": "Pakke i tollen: {tracking_id}",
+      "description": "Pakke {tracking_id} ({carrier}) har vært i tollen i {days} dager."
+    },
+    "auth_failed": {
+      "title": "Autentisering mislyktes: {carrier}",
+      "description": "{carrier} API-legitimasjoner er ugyldige eller utløpt. Vennligst rekonfigurer integrasjonen."
+    }
+  },
   "entity": {
     "sensor": {
+      "summary": {
+        "name": "Sammendrag"
+      },
       "parcel": {
         "state": {
           "unknown": "Ukjent",
           "pre_transit": "Forhåndsvarslet",
           "in_transit": "Under transport",
+          "customs": "Toll",
           "out_for_delivery": "Ute for levering",
           "ready_for_pickup": "Klar for henting",
           "delivered": "Levert",

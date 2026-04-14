@@ -31,7 +31,7 @@ _STATUS_MAP: dict[str, ShipmentStatus] = {
     "COLLECTED": ShipmentStatus.IN_TRANSIT,
     "IN_TRANSIT": ShipmentStatus.IN_TRANSIT,
     "TERMINAL": ShipmentStatus.IN_TRANSIT,
-    "CUSTOMS": ShipmentStatus.IN_TRANSIT,
+    "CUSTOMS": ShipmentStatus.CUSTOMS,
     "INTERNATIONAL": ShipmentStatus.IN_TRANSIT,
     "TRANSPORT_TO_RECIPIENT": ShipmentStatus.OUT_FOR_DELIVERY,
     "DELIVERY_ORDERED": ShipmentStatus.OUT_FOR_DELIVERY,

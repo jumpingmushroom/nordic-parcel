@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import ClassVar
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
@@ -64,6 +65,16 @@ async def async_setup_entry(
     _async_add_new_entities()
 
     entry.async_on_unload(coordinator.async_add_listener(_async_add_new_entities))
+
+    # Create or update the global summary sensor
+    domain_data = hass.data.get(DOMAIN, {})
+    summary: NordicParcelSummarySensor | None = domain_data.get("summary_entity")
+    if summary is None:
+        summary = NordicParcelSummarySensor(hass)
+        domain_data["summary_entity"] = summary
+        async_add_entities([summary])
+    else:
+        summary.add_coordinator(coordinator)
 
 
 class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntity):
@@ -143,3 +154,84 @@ class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntit
             attrs["last_event_location"] = last.location
 
         return attrs
+
+
+class NordicParcelSummarySensor(SensorEntity):
+    """Summary sensor aggregating parcel counts across all carriers."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "summary"
+    _attr_unique_id = f"{DOMAIN}_summary"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "parcels"
+    _attr_icon = "mdi:package-variant-closed"
+    _attr_device_info = DeviceInfo(
+        identifiers={(DOMAIN, "summary")},
+        name="Nordic Parcel",
+        entry_type=DeviceEntryType.SERVICE,
+    )
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+        self._unsub_listeners: list[Callable] = []
+
+    @callback
+    def _aggregate(self) -> None:
+        """Recompute state from all coordinators."""
+        domain_data = self.hass.data.get(DOMAIN, {})
+        coordinators = domain_data.get("coordinators", {})
+
+        all_shipments: list[Shipment] = []
+        for coordinator in coordinators.values():
+            if coordinator.data:
+                all_shipments.extend(coordinator.data.values())
+
+        active = [s for s in all_shipments if s.status != ShipmentStatus.DELIVERED]
+        delivered = [s for s in all_shipments if s.status == ShipmentStatus.DELIVERED]
+
+        self._attr_native_value = len(active)
+
+        # Status breakdown (only active parcels)
+        status_counts: dict[str, int] = {}
+        for status in ShipmentStatus:
+            if status == ShipmentStatus.DELIVERED:
+                continue
+            count = sum(1 for s in active if s.status == status)
+            if count > 0:
+                status_counts[status.value] = count
+
+        # Carrier breakdown (only active parcels)
+        carrier_counts: dict[str, int] = {}
+        for s in active:
+            key = s.carrier.value
+            carrier_counts[key] = carrier_counts.get(key, 0) + 1
+
+        self._attr_extra_state_attributes = {
+            **status_counts,
+            "total_active": len(active),
+            "total_delivered": len(delivered),
+            **{f"carrier_{k}": v for k, v in carrier_counts.items()},
+        }
+
+        self.async_write_ha_state()
+
+    def add_coordinator(self, coordinator: NordicParcelCoordinator) -> None:
+        """Subscribe to a new coordinator's updates."""
+        self._unsub_listeners.append(coordinator.async_add_listener(self._aggregate))
+        self._aggregate()
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to all existing coordinators when added to HA."""
+        domain_data = self.hass.data.get(DOMAIN, {})
+        coordinators = domain_data.get("coordinators", {})
+        for coordinator in coordinators.values():
+            self._unsub_listeners.append(coordinator.async_add_listener(self._aggregate))
+        self._aggregate()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unsubscribe from all coordinators."""
+        for unsub in self._unsub_listeners:
+            unsub()
+        self._unsub_listeners.clear()
+        domain_data = self.hass.data.get(DOMAIN, {})
+        domain_data.pop("summary_entity", None)

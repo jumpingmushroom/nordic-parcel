@@ -76,13 +76,39 @@
       }
     }
   },
+  "issues": {
+    "stale_tracking": {
+      "title": "Stale tracking: {tracking_id}",
+      "description": "Parcel {tracking_id} ({carrier}) has not had a tracking update in {days} days. Consider removing it.",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Remove stale tracking",
+            "description": "Parcel {tracking_id} ({carrier}) has had no updates for {days} days. Remove it?"
+          }
+        }
+      }
+    },
+    "stuck_customs": {
+      "title": "Parcel in customs: {tracking_id}",
+      "description": "Parcel {tracking_id} ({carrier}) has been in customs for {days} days."
+    },
+    "auth_failed": {
+      "title": "Authentication failed: {carrier}",
+      "description": "{carrier} API credentials are invalid or expired. Please reconfigure the integration."
+    }
+  },
   "entity": {
     "sensor": {
+      "summary": {
+        "name": "Summary"
+      },
       "parcel": {
         "state": {
           "unknown": "Unknown",
           "pre_transit": "Pre-transit",
           "in_transit": "In transit",
+          "customs": "Customs",
           "out_for_delivery": "Out for delivery",
           "ready_for_pickup": "Ready for pickup",
           "delivered": "Delivered",

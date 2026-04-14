@@ -150,7 +150,7 @@ class TestStatusMapping:
             ("RETURNED", ShipmentStatus.RETURNED),
             ("RETURNING", ShipmentStatus.RETURNED),
             ("OUT_FOR_DELIVERY", ShipmentStatus.OUT_FOR_DELIVERY),
-            ("CUSTOMS", ShipmentStatus.IN_TRANSIT),
+            ("CUSTOMS", ShipmentStatus.CUSTOMS),
         ],
     )
     def test_known_statuses(self, postnord_status, expected):

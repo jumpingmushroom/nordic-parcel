@@ -347,6 +347,131 @@ async def test_delivered_event_not_fired_twice(
     assert len(delivered_events) == 1
 
 
+# --- Granular event tests ---
+
+
+@pytest.mark.parametrize(
+    ("new_status", "expected_event"),
+    [
+        (ShipmentStatus.OUT_FOR_DELIVERY, f"{DOMAIN}_out_for_delivery"),
+        (ShipmentStatus.READY_FOR_PICKUP, f"{DOMAIN}_ready_for_pickup"),
+        (ShipmentStatus.RETURNED, f"{DOMAIN}_returned"),
+        (ShipmentStatus.FAILED, f"{DOMAIN}_failed"),
+        (ShipmentStatus.CUSTOMS, f"{DOMAIN}_customs"),
+    ],
+)
+async def test_granular_event_fired_on_transition(
+    hass: HomeAssistant,
+    mock_bring_config_entry,
+    mock_client,
+    new_status,
+    expected_event,
+):
+    """Test that granular events fire alongside status_changed."""
+    hass.config_entries.async_update_entry(
+        mock_bring_config_entry,
+        data={
+            **mock_bring_config_entry.data,
+            CONF_MANUAL_TRACKING: {"TRACK001": {"added": "2026-04-13T00:00:00+00:00"}},
+        },
+    )
+
+    granular_events = []
+    hass.bus.async_listen(expected_event, lambda e: granular_events.append(e))
+
+    status_events = []
+    hass.bus.async_listen(f"{DOMAIN}_status_changed", lambda e: status_events.append(e))
+
+    coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
+
+    # First poll: IN_TRANSIT (establishes baseline)
+    mock_client.track_shipment.return_value = [
+        _make_shipment("TRACK001", ShipmentStatus.IN_TRANSIT)
+    ]
+    await coordinator._async_update_data()
+    await hass.async_block_till_done()
+
+    # Second poll: transition to target status
+    mock_client.track_shipment.return_value = [_make_shipment("TRACK001", new_status)]
+    await coordinator._async_update_data()
+    await hass.async_block_till_done()
+
+    assert len(status_events) == 1
+    assert len(granular_events) == 1
+    assert granular_events[0].data["tracking_id"] == "TRACK001"
+    assert granular_events[0].data["old_status"] == ShipmentStatus.IN_TRANSIT.value
+    assert granular_events[0].data["new_status"] == new_status.value
+
+
+async def test_granular_event_not_fired_on_first_poll(
+    hass: HomeAssistant,
+    mock_bring_config_entry,
+    mock_client,
+):
+    """Test that granular events do not fire on first poll."""
+    hass.config_entries.async_update_entry(
+        mock_bring_config_entry,
+        data={
+            **mock_bring_config_entry.data,
+            CONF_MANUAL_TRACKING: {"TRACK001": {"added": "2026-04-13T00:00:00+00:00"}},
+        },
+    )
+
+    events = []
+    hass.bus.async_listen(f"{DOMAIN}_out_for_delivery", lambda e: events.append(e))
+
+    coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
+
+    mock_client.track_shipment.return_value = [
+        _make_shipment("TRACK001", ShipmentStatus.OUT_FOR_DELIVERY)
+    ]
+    await coordinator._async_update_data()
+    await hass.async_block_till_done()
+
+    assert len(events) == 0
+
+
+async def test_no_granular_event_for_in_transit(
+    hass: HomeAssistant,
+    mock_bring_config_entry,
+    mock_client,
+):
+    """Test that IN_TRANSIT transitions do not fire a granular event."""
+    hass.config_entries.async_update_entry(
+        mock_bring_config_entry,
+        data={
+            **mock_bring_config_entry.data,
+            CONF_MANUAL_TRACKING: {"TRACK001": {"added": "2026-04-13T00:00:00+00:00"}},
+        },
+    )
+
+    # Listen for all nordic_parcel events
+    all_events = []
+    hass.bus.async_listen(f"{DOMAIN}_status_changed", lambda e: all_events.append(e))
+    in_transit_events = []
+    hass.bus.async_listen(f"{DOMAIN}_in_transit", lambda e: in_transit_events.append(e))
+
+    coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
+
+    # First poll: PRE_TRANSIT
+    mock_client.track_shipment.return_value = [
+        _make_shipment("TRACK001", ShipmentStatus.PRE_TRANSIT)
+    ]
+    await coordinator._async_update_data()
+    await hass.async_block_till_done()
+
+    # Second poll: IN_TRANSIT
+    mock_client.track_shipment.return_value = [
+        _make_shipment("TRACK001", ShipmentStatus.IN_TRANSIT)
+    ]
+    await coordinator._async_update_data()
+    await hass.async_block_till_done()
+
+    # status_changed fires, but no granular in_transit event
+    assert len(all_events) == 1
+    assert len(in_transit_events) == 0
+
+
 # --- Auto-cleanup tests ---
 
 

@@ -163,7 +163,7 @@ class TestStatusMapping:
             ("RETURNED", ShipmentStatus.RETURNED),
             ("DEVIATION", ShipmentStatus.FAILED),
             ("TERMINAL", ShipmentStatus.IN_TRANSIT),
-            ("CUSTOMS", ShipmentStatus.IN_TRANSIT),
+            ("CUSTOMS", ShipmentStatus.CUSTOMS),
         ],
     )
     def test_known_statuses(self, bring_status, expected):

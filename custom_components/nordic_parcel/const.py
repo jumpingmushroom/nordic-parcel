@@ -35,6 +35,7 @@ class ShipmentStatus(StrEnum):
     UNKNOWN = "unknown"
     PRE_TRANSIT = "pre_transit"
     IN_TRANSIT = "in_transit"
+    CUSTOMS = "customs"
     OUT_FOR_DELIVERY = "out_for_delivery"
     READY_FOR_PICKUP = "ready_for_pickup"
     DELIVERED = "delivered"

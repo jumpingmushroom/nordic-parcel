@@ -7,6 +7,7 @@
           "unknown": "mdi:package-variant",
           "pre_transit": "mdi:package-variant-closed",
           "in_transit": "mdi:truck-delivery",
+          "customs": "mdi:shield-search",
           "out_for_delivery": "mdi:truck-fast",
           "ready_for_pickup": "mdi:mailbox-up",
           "delivered": "mdi:package-variant-closed-check",
