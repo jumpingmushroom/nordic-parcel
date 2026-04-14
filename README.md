@@ -155,9 +155,12 @@ cards:
       {% set icons = {
         'Pre Transit': '📦',
         'In Transit': '🚚',
+        'Customs': '🛃',
         'Out For Delivery': '🏃',
         'Ready For Pickup': '📬',
         'Delivered': '✅',
+        'Returned': '↩️',
+        'Failed': '❌',
         'Unknown': '❓'
       } %}
       {% for state in states.sensor
@@ -171,9 +174,12 @@ cards:
 
 Select a carrier, type the tracking ID, and hit enter. The parcel appears in the list below automatically.
 
-### Sensor Attributes
+### Sensors
 
-Each parcel sensor includes:
+#### Parcel Sensors
+
+Each tracked parcel gets its own sensor with the following attributes:
+
 - `carrier` — Which carrier is handling the parcel
 - `tracking_id` — The tracking number
 - `sender` — Sender name (when available)
@@ -182,7 +188,22 @@ Each parcel sensor includes:
 - `last_event_description` — Most recent tracking event
 - `last_event_time` — When the last event occurred
 - `last_event_location` — Where the last event occurred
-- `events` — List of recent tracking events (up to 10)
+- `event_count` — Number of tracking events
+
+Possible states: Unknown, Pre-transit, In transit, Customs, Out for delivery, Ready for pickup, Delivered, Returned, Failed.
+
+#### Summary Sensor
+
+A global **Nordic Parcel Summary** sensor aggregates all tracked parcels across every configured carrier:
+
+- **State:** Number of active (non-delivered) parcels
+- **Attributes:**
+  - Status breakdown — `in_transit`, `out_for_delivery`, `customs`, etc. (only statuses with count > 0)
+  - Carrier breakdown — `carrier_bring`, `carrier_postnord`, `carrier_helthjem`
+  - `total_active` — Same as state value
+  - `total_delivered` — Delivered parcels still being tracked before auto-cleanup
+
+Use this to build conditional dashboard cards (e.g., only show the parcel card when `total_active > 0`).
 
 ### Events
 
@@ -192,8 +213,25 @@ The integration fires events on the Home Assistant event bus that you can use in
 |-------|------------|------|
 | `nordic_parcel_status_changed` | Any parcel status transition | `tracking_id`, `carrier`, `sender`, `old_status`, `new_status` |
 | `nordic_parcel_delivered` | A parcel is first marked as delivered | `tracking_id`, `carrier` |
+| `nordic_parcel_out_for_delivery` | Parcel is out for delivery | `tracking_id`, `carrier`, `sender`, `old_status`, `new_status` |
+| `nordic_parcel_ready_for_pickup` | Parcel is ready for pickup | `tracking_id`, `carrier`, `sender`, `old_status`, `new_status` |
+| `nordic_parcel_returned` | Parcel was returned to sender | `tracking_id`, `carrier`, `sender`, `old_status`, `new_status` |
+| `nordic_parcel_failed` | Delivery failed | `tracking_id`, `carrier`, `sender`, `old_status`, `new_status` |
+| `nordic_parcel_customs` | Parcel entered customs | `tracking_id`, `carrier`, `sender`, `old_status`, `new_status` |
 
-Note: `nordic_parcel_status_changed` does not fire on the first poll after adding a parcel (only on subsequent transitions).
+The granular events fire **in addition to** `nordic_parcel_status_changed`, so you can listen to either the generic event or the specific one. No events fire on the first poll after adding a parcel (only on subsequent transitions).
+
+### Repairs
+
+The integration surfaces issues in **Settings > System > Repairs**:
+
+| Issue | Severity | Fixable | Condition |
+|-------|----------|---------|-----------|
+| Stale tracking | Warning | Yes (removes tracking) | No tracking update for 14+ days |
+| Stuck in customs | Warning | No (informational) | In customs for 7+ days |
+| Authentication failed | Error | No (use reauth flow) | Carrier API credentials invalid |
+
+Issues auto-clear when conditions resolve (e.g., parcel updates, leaves customs, reauth succeeds).
 
 ### Auto-Cleanup
 
@@ -222,6 +260,23 @@ automation:
             → {{ trigger.event.data.new_status | replace('_', ' ') | title }}
 ```
 
+#### Notify when out for delivery
+
+```yaml
+automation:
+  - alias: "Notify when parcel is out for delivery"
+    trigger:
+      - platform: event
+        event_type: nordic_parcel_out_for_delivery
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "Parcel on its way!"
+          message: >-
+            Your {{ trigger.event.data.carrier | title }} parcel
+            from {{ trigger.event.data.sender }} is out for delivery.
+```
+
 #### Notify on delivery only
 
 ```yaml
@@ -235,7 +290,7 @@ automation:
         data:
           title: "Parcel delivered!"
           message: >-
-            Your {{ trigger.event.data.carrier }} parcel
+            Your {{ trigger.event.data.carrier | title }} parcel
             {{ trigger.event.data.tracking_id }} has been delivered.
 ```
 
