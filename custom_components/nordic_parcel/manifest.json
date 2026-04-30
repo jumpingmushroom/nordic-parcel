@@ -8,5 +8,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/jumpingmushroom/nordic-parcel/issues",
   "requirements": [],
-  "version": "0.4.1"
+  "version": "0.4.2"
 }
