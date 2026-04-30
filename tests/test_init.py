@@ -188,6 +188,27 @@ async def test_add_tracking_strips_whitespace(hass: HomeAssistant, mock_bring_co
         mock_add.assert_awaited_once_with("ABC456")
 
 
+async def test_add_tracking_coerces_int_to_str(
+    hass: HomeAssistant, mock_bring_config_entry
+) -> None:
+    """Pure-digit tracking IDs are coerced to str when HA's template renderer
+    produces an int via literal_eval (regression: vol.All(str, ...) rejected ints)."""
+    client = _mock_client()
+    with patch("custom_components.nordic_parcel._create_client", return_value=client):
+        await hass.config_entries.async_setup(mock_bring_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    coordinator = mock_bring_config_entry.runtime_data
+    with patch.object(coordinator, "add_tracking", new_callable=AsyncMock) as mock_add:
+        await hass.services.async_call(
+            DOMAIN,
+            "add_tracking",
+            {"tracking_id": 70727320765017543},
+            blocking=True,
+        )
+        mock_add.assert_awaited_once_with("70727320765017543")
+
+
 async def test_add_tracking_with_carrier_filter(hass: HomeAssistant) -> None:
     """Test add_tracking filters by carrier when specified."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
