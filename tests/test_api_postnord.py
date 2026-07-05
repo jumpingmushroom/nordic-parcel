@@ -84,6 +84,15 @@ class TestTrackShipment:
         assert shipment.events[0].description == "In transit"
         assert shipment.events[0].location == "Stockholm"
 
+    async def test_track_shipment_invalid_json_raises_api_error(self, postnord_client):
+        client, session = postnord_client
+        resp = MagicMock()
+        resp.status = 200
+        resp.json = AsyncMock(side_effect=ValueError("not json"))
+        session.get = AsyncMock(return_value=resp)
+        with pytest.raises(CarrierApiError):
+            await client.track_shipment("00340000000000000001")
+
     async def test_parse_event_naive_timestamp_made_aware(self):
         """A timestamp without a UTC offset must be returned timezone-aware."""
         event = _parse_event({"eventTime": "2026-04-13T08:00:00", "status": "EN_ROUTE"})

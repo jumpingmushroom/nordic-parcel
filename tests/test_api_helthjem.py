@@ -70,6 +70,15 @@ class TestAuthenticate:
         with pytest.raises(CarrierApiError, match="Token request failed"):
             await client.authenticate()
 
+    async def test_authenticate_oauth_400_invalid_client_is_auth_failure(self, helthjem_client):
+        client, session = helthjem_client
+        session.post = AsyncMock(
+            return_value=_mock_response(status=400, payload={"error": "invalid_client"})
+        )
+        # A 400 with a credential error code must read as invalid auth, not a
+        # generic connection error.
+        assert await client.authenticate() is False
+
 
 class TestTrackShipment:
     """Tests for HelthjemApiClient.track_shipment()."""
@@ -89,6 +98,16 @@ class TestTrackShipment:
         assert len(shipment.events) == 1
         assert shipment.events[0].description == "In transit"
         assert shipment.events[0].location == "Trondheim"
+
+    async def test_track_shipment_invalid_json_raises_api_error(self, helthjem_client):
+        client, session = helthjem_client
+        session.post = AsyncMock(return_value=_mock_response(payload=HELTHJEM_TOKEN_RESPONSE))
+        track_resp = MagicMock()
+        track_resp.status = 200
+        track_resp.json = AsyncMock(side_effect=ValueError("not json"))
+        session.get = AsyncMock(return_value=track_resp)
+        with pytest.raises(CarrierApiError):
+            await client.track_shipment("HJ-TEST-12345")
 
     async def test_parse_event_naive_timestamp_made_aware(self):
         """A timestamp without a UTC offset must be returned timezone-aware."""

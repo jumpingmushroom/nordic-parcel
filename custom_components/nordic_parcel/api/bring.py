@@ -54,7 +54,10 @@ def _map_status(bring_status: str) -> ShipmentStatus:
 
 
 def _parse_event(event: dict) -> TrackingEvent:
-    """Parse a single Bring event dict into a TrackingEvent."""
+    """Parse a single Bring event dict into a TrackingEvent.
+
+    Raises KeyError/ValueError on a malformed event; callers skip those.
+    """
     timestamp = ensure_aware(datetime.fromisoformat(event["dateIso"]))
     location_parts = [event.get("city"), event.get("country")]
     location = ", ".join(p for p in location_parts if p) or None
@@ -91,7 +94,12 @@ def _parse_consignment(consignment: dict) -> list[Shipment]:
         # Prefer package-level sender/recipient, fall back to consignment-level
         pkg_sender = package.get("senderName") or sender
         pkg_recipient = package.get("recipientName") or recipient
-        events = [_parse_event(e) for e in package.get("eventSet", [])]
+        events = []
+        for e in package.get("eventSet", []):
+            try:
+                events.append(_parse_event(e))
+            except (KeyError, ValueError) as err:
+                _LOGGER.debug("Skipping malformed Bring event: %s", err)
         # Events are newest-first from Bring
         status = events[0].status if events else ShipmentStatus.UNKNOWN
 
@@ -183,7 +191,10 @@ class BringApiClient:
         if resp.status != 200:
             raise CarrierApiError(f"Bring API returned status {resp.status}")
 
-        data = await resp.json()
+        try:
+            data = await resp.json()
+        except (aiohttp.ClientError, ValueError) as err:
+            raise CarrierApiError(f"Invalid Bring API response: {err}") from err
 
         consignment_set = data.get("consignmentSet", [])
         if not consignment_set:

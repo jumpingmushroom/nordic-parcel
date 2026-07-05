@@ -165,11 +165,27 @@ class HelthjemApiClient:
 
         if resp.status in (401, 403):
             raise CarrierAuthError("Invalid Helthjem client credentials")
+        # OAuth2 token endpoints return 400 with an ``error`` code for bad
+        # credentials rather than 401/403 — surface those as auth failures so
+        # the config flow reports "invalid auth" and refreshes trigger reauth.
+        if resp.status == 400:
+            error_code = ""
+            try:
+                body = await resp.json()
+                if isinstance(body, dict):
+                    error_code = body.get("error", "")
+            except (aiohttp.ClientError, ValueError):
+                pass
+            if error_code in ("invalid_client", "unauthorized_client", "invalid_grant"):
+                raise CarrierAuthError("Invalid Helthjem client credentials")
         if resp.status != 200:
             raise CarrierApiError(f"Helthjem token endpoint returned {resp.status}")
 
-        data = await resp.json()
-        self._access_token = data["access_token"]
+        try:
+            data = await resp.json()
+            self._access_token = data["access_token"]
+        except (aiohttp.ClientError, ValueError, KeyError) as err:
+            raise CarrierApiError(f"Invalid Helthjem token response: {err}") from err
         expires_in = data.get("expires_in", 86400)  # Default 24h
         self._token_expires_at = time.time() + expires_in - _TOKEN_BUFFER_SECONDS
 
@@ -234,7 +250,10 @@ class HelthjemApiClient:
         if resp.status != 200:
             raise CarrierApiError(f"Helthjem API returned status {resp.status}")
 
-        data = await resp.json()
+        try:
+            data = await resp.json()
+        except (aiohttp.ClientError, ValueError) as err:
+            raise CarrierApiError(f"Invalid Helthjem API response: {err}") from err
 
         # Response may contain multiple parcels for a single shipment
         parcels = data if isinstance(data, list) else [data]

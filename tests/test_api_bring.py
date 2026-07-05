@@ -90,6 +90,43 @@ class TestTrackShipment:
         assert shipment.events[0].description == "Parcel received by Bring"
         assert shipment.events[0].location == "Oslo, Norway"
 
+    async def test_track_shipment_invalid_json_raises_api_error(self, bring_client):
+        client, session = bring_client
+        resp = MagicMock()
+        resp.status = 200
+        resp.json = AsyncMock(side_effect=ValueError("not json"))
+        session.get = AsyncMock(return_value=resp)
+        with pytest.raises(CarrierApiError):
+            await client.track_shipment("370000000000123456")
+
+    async def test_track_shipment_skips_malformed_event(self, bring_client):
+        client, session = bring_client
+        payload = {
+            "consignmentSet": [
+                {
+                    "senderName": "Sender",
+                    "packageSet": [
+                        {
+                            "packageNumber": "PKG1",
+                            "eventSet": [
+                                {"description": "no timestamp"},
+                                {
+                                    "dateIso": "2026-04-13T10:30:00+02:00",
+                                    "status": "IN_TRANSIT",
+                                    "description": "good",
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        session.get = AsyncMock(return_value=_mock_response(payload=payload))
+        shipments = await client.track_shipment("PKG1")
+        assert len(shipments) == 1
+        # Only the well-formed event survives; parsing does not crash.
+        assert len(shipments[0].events) == 1
+
     async def test_parse_event_naive_timestamp_made_aware(self):
         """A timestamp without a UTC offset must be returned timezone-aware."""
         event = _parse_event(

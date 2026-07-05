@@ -172,7 +172,10 @@ class PostnordApiClient:
         if resp.status != 200:
             raise CarrierApiError(f"Postnord API returned status {resp.status}")
 
-        data = await resp.json()
+        try:
+            data = await resp.json()
+        except (aiohttp.ClientError, ValueError) as err:
+            raise CarrierApiError(f"Invalid Postnord API response: {err}") from err
 
         tracking_resp = data.get("TrackingInformationResponse", {})
         shipments = tracking_resp.get("shipments", [])
