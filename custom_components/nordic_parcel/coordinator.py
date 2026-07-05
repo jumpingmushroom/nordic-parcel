@@ -104,9 +104,13 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
         shipments: dict[str, Shipment] = {}
         config_changed = False
 
-        # Work on a copy of manual tracking for batched updates
+        # Work on a copy of manual tracking for batched updates. Track the
+        # deltas this cycle makes so the final write can be merged into a fresh
+        # re-read, preserving IDs added/removed concurrently during the awaits.
         data = dict(self.config_entry.data)
         manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
+        manual_removed: set[str] = set()
+        manual_added: dict[str, dict] = {}
 
         # 1. Fetch auto-discovered shipments from account
         try:
@@ -141,9 +145,11 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                 result_ids = [s.tracking_id.upper() for s in results]
                 if result_ids and tracking_id not in result_ids:
                     ts = manual.pop(tracking_id)
+                    manual_removed.add(tracking_id)
                     for new_id in result_ids:
                         if new_id not in manual:
                             manual[new_id] = ts
+                            manual_added[new_id] = ts
                     config_changed = True
                     _LOGGER.info(
                         "Replaced consignment %s with package(s): %s",
@@ -274,14 +280,21 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                 self._previous_statuses.pop(tid, None)
                 if tid in manual:
                     manual.pop(tid)
+                    manual_removed.add(tid)
                 config_changed = True
 
         # 6. Batch-write config entry if anything changed
         if config_changed:
-            # Re-read config entry data to avoid overwriting concurrent changes
-            # from add_tracking/remove_tracking that ran during API calls above
+            # Re-read config entry data and merge only this cycle's deltas, so
+            # add_tracking/remove_tracking calls that ran during the API awaits
+            # above are not clobbered by our stale `manual` snapshot.
             fresh_data = dict(self.config_entry.data)
-            fresh_data[CONF_MANUAL_TRACKING] = manual
+            fresh_manual = dict(fresh_data.get(CONF_MANUAL_TRACKING, {}))
+            for tid in manual_removed:
+                fresh_manual.pop(tid, None)
+            for tid, ts in manual_added.items():
+                fresh_manual.setdefault(tid, ts)
+            fresh_data[CONF_MANUAL_TRACKING] = fresh_manual
             fresh_data[CONF_DELIVERED_TIMESTAMPS] = {
                 tid: ts.isoformat() for tid, ts in self._delivered_timestamps.items()
             }

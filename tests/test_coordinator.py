@@ -103,6 +103,42 @@ async def test_update_fetches_manual_tracking(
     mock_client.track_shipment.assert_awaited_once_with("TRACK001")
 
 
+async def test_update_preserves_concurrent_add_tracking(
+    hass: HomeAssistant,
+    mock_bring_config_entry,
+    mock_client,
+):
+    """A tracking ID added during the API awaits must survive the batch write."""
+    delivered = _make_shipment("OLD1", status=ShipmentStatus.DELIVERED)
+
+    hass.config_entries.async_update_entry(
+        mock_bring_config_entry,
+        data={
+            **mock_bring_config_entry.data,
+            CONF_MANUAL_TRACKING: {"OLD1": {"added": "2026-04-13T00:00:00+00:00"}},
+        },
+    )
+    coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
+
+    async def track_with_concurrent_add(tracking_id):
+        # Simulate a user calling add_tracking while the API call is in flight.
+        current = dict(mock_bring_config_entry.data)
+        manual = dict(current.get(CONF_MANUAL_TRACKING, {}))
+        manual["NEW2"] = {"added": "2026-04-14T00:00:00+00:00"}
+        current[CONF_MANUAL_TRACKING] = manual
+        hass.config_entries.async_update_entry(mock_bring_config_entry, data=current)
+        return [delivered]
+
+    mock_client.track_shipment.side_effect = track_with_concurrent_add
+
+    # The delivery detection forces config_changed=True, triggering the write.
+    await coordinator._async_update_data()
+
+    manual_after = mock_bring_config_entry.data.get(CONF_MANUAL_TRACKING, {})
+    assert "NEW2" in manual_after
+    assert "OLD1" in manual_after
+
+
 async def test_update_auth_error_raises_config_entry_auth_failed(
     hass: HomeAssistant, coordinator, mock_client
 ):
