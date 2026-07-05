@@ -46,6 +46,7 @@ Nordic Parcel is a small (~1,900 LOC source, ~3,000 LOC tests), well-structured 
 - **Verification:** Test: create a stale-tracking issue via a 14-day-old shipment, then remove the tracking via `remove_tracking` and refresh; assert the issue registry no longer contains `stale_tracking_<tid>`.
 
 ### [SEV-3] hacs.json advertises HA 2024.1.0 but the code requires much newer core APIs
+> **FIXED:** Raised `homeassistant` minimum in hacs.json to `2024.12.0` (the floor set by `ConfigFlow._get_reauth_entry`).
 - **File:** hacs.json:3, custom_components/nordic_parcel/__init__.py:94, custom_components/nordic_parcel/config_flow.py:10, 180
 - **Issue:** `"homeassistant": "2024.1.0"` lets HACS install this on cores where it cannot run: `ConfigEntry.runtime_data` and `ConfigFlowResult` landed in HA 2024.4, and `ConfigFlow._get_reauth_entry()` (config_flow.py:180) landed around 2024.11–2024.12. The `type NordicParcelConfigEntry = ...` statement (coordinator.py:44) also requires Python 3.12, which HA 2024.1 didn't guarantee. Users on older cores get import errors or reauth crashes instead of a clean "requires newer HA" message.
 - **Evidence:** Version floor vs. API usage mismatch; no runtime guard exists.
@@ -53,6 +54,7 @@ Nordic Parcel is a small (~1,900 LOC source, ~3,000 LOC tests), well-structured 
 - **Verification:** `grep runtime_data\|ConfigFlowResult\|_get_reauth_entry` against the chosen minimum core's release notes; or install under that core in a test container and load the integration.
 
 ### [SEV-3] async_unload_entry tears down shared state before checking unload success
+> **FIXED:** Gated all coordinator/service/domain-data teardown on `if unload_ok:`. Added a failed-unload test.
 - **File:** custom_components/nordic_parcel/__init__.py:116-133
 - **Issue:** The coordinator is removed from the shared registry and (if last entry) services and `hass.data[DOMAIN]` are removed regardless of `unload_ok`. If `async_unload_platforms` fails, the entry stays LOADED but its coordinator is gone from the aggregation registry and the services may be unregistered — leaving a loaded entry whose summary aggregation and services are broken.
 - **Evidence:** `unload_ok` is computed at line 118 but only consulted in the return; all teardown at lines 121-131 runs unconditionally.

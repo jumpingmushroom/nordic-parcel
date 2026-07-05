@@ -169,6 +169,31 @@ async def test_summary_survives_unload_of_owning_entry(hass: HomeAssistant) -> N
     assert postnord_entry.state is ConfigEntryState.LOADED
 
 
+async def test_async_unload_failure_keeps_shared_state(
+    hass: HomeAssistant, mock_bring_config_entry
+) -> None:
+    """If platform unload fails, coordinator and services must remain."""
+    client = _mock_client()
+    with patch("custom_components.nordic_parcel._create_client", return_value=client):
+        await hass.config_entries.async_setup(mock_bring_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    entry_id = mock_bring_config_entry.entry_id
+    assert entry_id in hass.data[DOMAIN]["coordinators"]
+
+    with patch(
+        "homeassistant.config_entries.ConfigEntries.async_unload_platforms",
+        return_value=False,
+    ):
+        result = await hass.config_entries.async_unload(entry_id)
+        await hass.async_block_till_done()
+
+    assert result is False
+    # Shared state must survive a failed unload.
+    assert entry_id in hass.data[DOMAIN]["coordinators"]
+    assert hass.services.has_service(DOMAIN, "add_tracking")
+
+
 async def test_async_unload_last_entry(hass: HomeAssistant, mock_bring_config_entry) -> None:
     """Test unloading last entry removes services and domain data."""
     client = _mock_client()

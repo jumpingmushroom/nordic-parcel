@@ -117,18 +117,21 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    # Remove coordinator from shared registry
-    if DOMAIN in hass.data:
-        hass.data[DOMAIN]["coordinators"].pop(entry.entry_id, None)
+    # Only tear down shared state if the platforms actually unloaded; otherwise
+    # the entry stays LOADED and must keep its coordinator and services.
+    if unload_ok:
+        # Remove coordinator from shared registry
+        if DOMAIN in hass.data:
+            hass.data[DOMAIN]["coordinators"].pop(entry.entry_id, None)
 
-    # Unregister services and clean up shared data if no entries remain
-    remaining = [
-        e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id
-    ]
-    if not remaining:
-        hass.services.async_remove(DOMAIN, SERVICE_ADD_TRACKING)
-        hass.services.async_remove(DOMAIN, SERVICE_REMOVE_TRACKING)
-        hass.data.pop(DOMAIN, None)
+        # Unregister services and clean up shared data if no entries remain
+        remaining = [
+            e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id
+        ]
+        if not remaining:
+            hass.services.async_remove(DOMAIN, SERVICE_ADD_TRACKING)
+            hass.services.async_remove(DOMAIN, SERVICE_REMOVE_TRACKING)
+            hass.data.pop(DOMAIN, None)
 
     return unload_ok
 
