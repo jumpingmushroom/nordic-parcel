@@ -3,10 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
 from ..const import Carrier, ShipmentStatus
+
+
+def ensure_aware(value: datetime) -> datetime:
+    """Return a timezone-aware datetime, assuming UTC if naive.
+
+    Carrier APIs sometimes return timestamps without a UTC offset. Leaving
+    these naive causes TypeErrors when compared or subtracted against the
+    aware ``datetime.now(UTC)`` used throughout the coordinator.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
 
 
 @dataclass

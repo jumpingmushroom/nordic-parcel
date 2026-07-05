@@ -12,7 +12,7 @@ from custom_components.nordic_parcel.api import (
     CarrierNotFoundError,
     CarrierRateLimitError,
 )
-from custom_components.nordic_parcel.api.bring import BringApiClient, _map_status
+from custom_components.nordic_parcel.api.bring import BringApiClient, _map_status, _parse_event
 from custom_components.nordic_parcel.const import Carrier, ShipmentStatus
 from tests.conftest import BRING_TRACKING_RESPONSE
 
@@ -89,6 +89,17 @@ class TestTrackShipment:
         assert len(shipment.events) == 1
         assert shipment.events[0].description == "Parcel received by Bring"
         assert shipment.events[0].location == "Oslo, Norway"
+
+    async def test_parse_event_naive_timestamp_made_aware(self):
+        """A timestamp without a UTC offset must be returned timezone-aware."""
+        event = _parse_event(
+            {
+                "dateIso": "2026-04-13T10:30:00",
+                "status": "IN_TRANSIT",
+                "description": "No offset",
+            }
+        )
+        assert event.timestamp.tzinfo is not None
 
     async def test_track_shipment_not_found_empty_consignment_set(self, bring_client):
         client, session = bring_client

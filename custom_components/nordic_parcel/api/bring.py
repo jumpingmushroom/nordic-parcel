@@ -17,6 +17,7 @@ from . import (
     CarrierRateLimitError,
     Shipment,
     TrackingEvent,
+    ensure_aware,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ def _map_status(bring_status: str) -> ShipmentStatus:
 
 def _parse_event(event: dict) -> TrackingEvent:
     """Parse a single Bring event dict into a TrackingEvent."""
-    timestamp = datetime.fromisoformat(event["dateIso"])
+    timestamp = ensure_aware(datetime.fromisoformat(event["dateIso"]))
     location_parts = [event.get("city"), event.get("country")]
     location = ", ".join(p for p in location_parts if p) or None
 

@@ -18,6 +18,7 @@ from . import (
     CarrierRateLimitError,
     Shipment,
     TrackingEvent,
+    ensure_aware,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ def _parse_event(event: dict) -> TrackingEvent:
     """Parse a Helthjem tracking event."""
     timestamp_str = event.get("timestamp") or event.get("eventTime", "")
     try:
-        timestamp = datetime.fromisoformat(timestamp_str)
+        timestamp = ensure_aware(datetime.fromisoformat(timestamp_str))
     except ValueError:
         timestamp = datetime.now(UTC)
 

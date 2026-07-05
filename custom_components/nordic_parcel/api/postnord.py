@@ -17,6 +17,7 @@ from . import (
     CarrierRateLimitError,
     Shipment,
     TrackingEvent,
+    ensure_aware,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ def _parse_event(event: dict) -> TrackingEvent:
     # Postnord uses eventTime as ISO string
     timestamp_str = event.get("eventTime") or event.get("eventDate", "")
     try:
-        timestamp = datetime.fromisoformat(timestamp_str)
+        timestamp = ensure_aware(datetime.fromisoformat(timestamp_str))
     except ValueError:
         timestamp = datetime.now(UTC)
 

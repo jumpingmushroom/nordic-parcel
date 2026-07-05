@@ -16,6 +16,7 @@ from custom_components.nordic_parcel.api import (
 from custom_components.nordic_parcel.api.helthjem import (
     HelthjemApiClient,
     _map_event_code,
+    _parse_event,
 )
 from custom_components.nordic_parcel.const import Carrier, ShipmentStatus
 from tests.conftest import HELTHJEM_TOKEN_RESPONSE, HELTHJEM_TRACKING_RESPONSE
@@ -88,6 +89,11 @@ class TestTrackShipment:
         assert len(shipment.events) == 1
         assert shipment.events[0].description == "In transit"
         assert shipment.events[0].location == "Trondheim"
+
+    async def test_parse_event_naive_timestamp_made_aware(self):
+        """A timestamp without a UTC offset must be returned timezone-aware."""
+        event = _parse_event({"timestamp": "2026-04-13T09:00:00", "eventCode": "003"})
+        assert event.timestamp.tzinfo is not None
 
     async def test_track_shipment_not_found_404(self, helthjem_client):
         client, session = helthjem_client
