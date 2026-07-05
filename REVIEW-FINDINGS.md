@@ -134,3 +134,30 @@ Nordic Parcel is a small (~1,900 LOC source, ~3,000 LOC tests), well-structured 
 - Test bodies were reviewed for coverage shape (names, fixtures, scenarios) rather than line-by-line assertion auditing.
 - Live behavior of the three carrier APIs (actual timestamp formats, OAuth error codes, response shapes) could not be verified against real endpoints; findings that depend on API behavior (naive timestamps, Helthjem 400-on-bad-creds) are flagged with that uncertainty.
 - README automation/dashboard YAML examples were spot-checked against service names and event names, not executed.
+
+## Fix Session Summary
+Fixed on branch `fix/review-findings` (from `main`), one commit per finding/group. Baseline 170 tests → 185 tests, all passing; `ruff check` and `ruff format --check` clean. Each fix was re-verified to exist before changing code, and each new test was confirmed to fail without its fix and pass with it. No SEV-1 findings existed in the report.
+
+### Fixed (all SEV-2 and SEV-3)
+- **SEV-2 — Timezone-naive carrier timestamps crash the coordinator.** Added `ensure_aware()` in `api/__init__.py`; all three `_parse_event` functions normalize naive timestamps to UTC. (commit `74adeab`)
+- **SEV-2 — Summary sensor destroyed when its owning entry unloads.** `async_will_remove_from_hass` always drops the stale reference; setup reuses the summary only while still added (`added` property). (commit `056315a`)
+- **SEV-3 — Coordinator batch-write drops concurrent add_tracking.** Step 6 re-reads `manual_tracking` and merges only this cycle's deltas. (commit `516ce61`)
+- **SEV-3 — Orphaned stale/customs repair issues.** Coordinator tracks `_issue_tids` and clears issues for shipments that vanish. (commit `9f6f7d2`)
+- **SEV-3 — Response body parsing outside error handling.** Wrapped every `resp.json()` to raise `CarrierApiError`; Bring skips malformed events; **SEV-3 — Helthjem OAuth 400** now maps to `CarrierAuthError`. (commit `9431208`)
+- **SEV-3 — hacs.json HA version floor** raised to 2024.12.0; **SEV-3 — unload teardown** gated on `unload_ok`. (commit `a555752`)
+- **SEV-3 — Carrier-less add_tracking fails silently.** Probes carriers to find the one that resolves the ID, else raises `ServiceValidationError`. (commit `71d5c93`)
+- **SEV-3 — Diagnostics leaks full tracking IDs.** Masks the tracking-ID keys of `manual_tracking`/`delivered_timestamps`. (commit `97e98bc`)
+- **SEV-4 — Diagnostics had no end-to-end test.** Closed for free alongside the diagnostics leak fix (trivial). (commit `97e98bc`)
+- Follow-up `style:` commit `13c08da` for ruff line-length/formatting.
+
+### Disputed
+- None. Every finding re-verified as real before fixing.
+
+### Deferred (remaining SEV-4 hygiene, per instructions — not trivial)
+- **Summary sensor accumulates listeners across reloads** — needs per-entry listener keying; more than a trivial edit.
+- **Orphaned entity-registry entries for shipments removed while HA offline** — needs registry reconciliation on setup.
+- **Per-parcel sensor unique_id can collide across entries** — fix requires a unique_id scheme change plus a registry migration to avoid duplicating users' existing entities; deferred to avoid a breaking change in this pass.
+- **Manual shipments fetched sequentially** — performance only; bounded-concurrency `gather` deferred.
+- **`close()` is dead API surface** — harmless no-op; left in place (removing it is cosmetic and touches the protocol).
+
+Note on the Helthjem 400 fix: the mapping of OAuth `error` codes to auth failures is based on the OAuth2 convention, not verified against the live Helthjem endpoint; it is conservative (only known credential-error codes) and safe regardless.
