@@ -8,10 +8,20 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_API_KEY, CONF_API_UID, CONF_CLIENT_ID, CONF_CLIENT_SECRET
+from .const import (
+    CONF_API_KEY,
+    CONF_API_UID,
+    CONF_CLIENT_ID,
+    CONF_CLIENT_SECRET,
+    CONF_DELIVERED_TIMESTAMPS,
+    CONF_MANUAL_TRACKING,
+)
 from .coordinator import NordicParcelCoordinator
 
 TO_REDACT = {CONF_API_KEY, CONF_API_UID, CONF_CLIENT_ID, CONF_CLIENT_SECRET}
+
+# Config-entry data keyed by full tracking IDs, which must be masked by key.
+_TRACKING_KEYED = (CONF_MANUAL_TRACKING, CONF_DELIVERED_TIMESTAMPS)
 
 
 def _mask_tracking_id(tracking_id: str) -> str:
@@ -51,7 +61,19 @@ async def async_get_config_entry_diagnostics(
                 ],
             }
 
+    redacted_entry = async_redact_data(entry.as_dict(), TO_REDACT)
+    # async_redact_data cannot mask dict *keys*; mask tracking IDs used as keys
+    # in manual_tracking / delivered_timestamps so they don't leak in full.
+    entry_data = redacted_entry.get("data")
+    if isinstance(entry_data, dict):
+        for key in _TRACKING_KEYED:
+            keyed = entry_data.get(key)
+            if isinstance(keyed, dict):
+                entry_data[key] = {
+                    _mask_tracking_id(tid): value for tid, value in keyed.items()
+                }
+
     return {
-        "config_entry": async_redact_data(entry.as_dict(), TO_REDACT),
+        "config_entry": redacted_entry,
         "coordinator_data": shipments_data,
     }

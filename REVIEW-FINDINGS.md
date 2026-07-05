@@ -70,6 +70,7 @@ Nordic Parcel is a small (~1,900 LOC source, ~3,000 LOC tests), well-structured 
 - **Verification:** Test: two entries configured, call `add_tracking` without carrier for an ID only the second carrier resolves; assert it ends up tracked (or the service raises) rather than silently dead.
 
 ### [SEV-3] Diagnostics masks tracking IDs in one section but leaks them all in another
+> **FIXED:** After redacting credentials, diagnostics now masks the tracking-ID keys of `manual_tracking`/`delivered_timestamps` in the config-entry dump. Added an end-to-end diagnostics test (also closes the SEV-4 diagnostics coverage gap).
 - **File:** custom_components/nordic_parcel/diagnostics.py:54-55
 - **Issue:** `coordinator_data` carefully masks tracking IDs and redacts sender/recipient/location, but `entry.as_dict()` is included with only credential keys redacted — and `entry.data` contains `manual_tracking` and `delivered_timestamps`, both keyed by **full** tracking IDs. Anyone the user shares a diagnostics dump with (GitHub issues, forums) gets every tracking number, defeating the masking one section below.
 - **Evidence:** `TO_REDACT` covers only the four credential keys; `CONF_MANUAL_TRACKING`/`CONF_DELIVERED_TIMESTAMPS` are dict-keyed by tracking ID, which `async_redact_data` cannot mask by key name anyway.
@@ -120,6 +121,7 @@ Nordic Parcel is a small (~1,900 LOC source, ~3,000 LOC tests), well-structured 
 - **Verification:** `ruff`/`grep` confirm no references remain; tests pass.
 
 ### [SEV-4] Diagnostics endpoint has no end-to-end test
+> **FIXED:** Added `test_diagnostics_masks_tracking_ids_and_credentials` covering the full diagnostics path (done alongside the SEV-3 diagnostics leak fix).
 - **File:** tests/test_diagnostics.py:1-19
 - **Issue:** Only the `_mask_tracking_id` helper is tested. `async_get_config_entry_diagnostics` — the code that decides what gets redacted and what leaks (see the SEV-3 above) — is untested, so redaction regressions ship silently.
 - **Evidence:** 19-line test file, no use of the diagnostics entry point or a config entry fixture.
