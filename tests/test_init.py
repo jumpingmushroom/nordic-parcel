@@ -112,6 +112,63 @@ async def test_async_unload_entry(hass: HomeAssistant) -> None:
     assert bring_entry.entry_id not in hass.data[DOMAIN]["coordinators"]
 
 
+async def test_summary_survives_unload_of_owning_entry(hass: HomeAssistant) -> None:
+    """Unloading the entry that created the summary must not orphan it.
+
+    The summary entity is added via the first entry's platform. After that
+    entry unloads, the shared reference must be cleared so a later setup
+    recreates a working summary instead of writing state on a removed entity.
+    """
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.nordic_parcel.const import CONF_API_KEY, CONF_API_UID, CONF_CARRIER
+
+    bring_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bring",
+        data={CONF_CARRIER: Carrier.BRING, CONF_API_UID: "a@b.com", CONF_API_KEY: "k1"},
+        unique_id="bring_summary_test",
+    )
+    postnord_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Postnord",
+        data={CONF_CARRIER: Carrier.POSTNORD, CONF_API_KEY: "k2"},
+        unique_id="postnord_summary_test",
+    )
+    bring_entry.add_to_hass(hass)
+    postnord_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.nordic_parcel._create_client",
+        side_effect=[_mock_client(Carrier.BRING), _mock_client(Carrier.POSTNORD)],
+    ):
+        await hass.config_entries.async_setup(bring_entry.entry_id)
+        await hass.async_block_till_done()
+
+    summary = hass.data[DOMAIN].get("summary_entity")
+    assert summary is not None and summary.added
+
+    # Unload the entry that created the summary; the stale reference must go.
+    await hass.config_entries.async_unload(bring_entry.entry_id)
+    await hass.async_block_till_done()
+
+    orphan = hass.data[DOMAIN].get("summary_entity")
+    assert orphan is None or orphan.added
+
+    # Reloading the entry must recreate a working summary without raising.
+    with patch(
+        "custom_components.nordic_parcel._create_client",
+        return_value=_mock_client(Carrier.BRING),
+    ):
+        await hass.config_entries.async_setup(bring_entry.entry_id)
+        await hass.async_block_till_done()
+
+    recreated = hass.data[DOMAIN].get("summary_entity")
+    assert recreated is not None and recreated.added
+    assert bring_entry.state is ConfigEntryState.LOADED
+    assert postnord_entry.state is ConfigEntryState.LOADED
+
+
 async def test_async_unload_last_entry(hass: HomeAssistant, mock_bring_config_entry) -> None:
     """Test unloading last entry removes services and domain data."""
     client = _mock_client()

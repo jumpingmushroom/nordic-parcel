@@ -64,10 +64,12 @@ async def async_setup_entry(
 
     entry.async_on_unload(coordinator.async_add_listener(_async_add_new_entities))
 
-    # Create or update the global summary sensor
+    # Create or update the global summary sensor. Reuse the existing entity
+    # only if it is still added to hass — a summary created by a now-unloaded
+    # entry leaves a stale reference behind, and writing state on it would fail.
     domain_data = hass.data.get(DOMAIN, {})
     summary: NordicParcelSummarySensor | None = domain_data.get("summary_entity")
-    if summary is None:
+    if summary is None or not summary.added:
         summary = NordicParcelSummarySensor(hass)
         domain_data["summary_entity"] = summary
         async_add_entities([summary])
@@ -172,6 +174,12 @@ class NordicParcelSummarySensor(SensorEntity):
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
         self._unsub_listeners: list[Callable] = []
+        self._added = False
+
+    @property
+    def added(self) -> bool:
+        """Return True while this entity is registered with hass."""
+        return self._added
 
     @callback
     def _aggregate(self) -> None:
@@ -220,6 +228,7 @@ class NordicParcelSummarySensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to all existing coordinators when added to HA."""
+        self._added = True
         domain_data = self.hass.data.get(DOMAIN, {})
         coordinators = domain_data.get("coordinators", {})
         for coordinator in coordinators.values():
@@ -228,10 +237,12 @@ class NordicParcelSummarySensor(SensorEntity):
 
     async def async_will_remove_from_hass(self) -> None:
         """Unsubscribe from all coordinators."""
+        self._added = False
         for unsub in self._unsub_listeners:
             unsub()
         self._unsub_listeners.clear()
+        # Always drop the shared reference: this instance is being removed, so
+        # the stored pointer is now stale. A later entry setup recreates it.
         domain_data = self.hass.data.get(DOMAIN, {})
-        # Only clear from domain_data if no coordinators remain
-        if not domain_data.get("coordinators"):
+        if domain_data.get("summary_entity") is self:
             domain_data.pop("summary_entity", None)
