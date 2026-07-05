@@ -334,6 +334,97 @@ async def test_add_tracking_with_carrier_filter(hass: HomeAssistant) -> None:
         mock_add.assert_awaited_once_with("PN123")
 
 
+async def test_add_tracking_probes_carriers_when_ambiguous(hass: HomeAssistant) -> None:
+    """With multiple carriers and no filter, the ID goes to the one that resolves it."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.nordic_parcel.api import Shipment
+    from custom_components.nordic_parcel.const import CONF_API_KEY, CONF_API_UID, CONF_CARRIER
+
+    bring_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bring",
+        data={CONF_CARRIER: Carrier.BRING, CONF_API_UID: "a@b.com", CONF_API_KEY: "k1"},
+        unique_id="bring_probe_test",
+    )
+    postnord_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Postnord",
+        data={CONF_CARRIER: Carrier.POSTNORD, CONF_API_KEY: "k2"},
+        unique_id="postnord_probe_test",
+    )
+    bring_entry.add_to_hass(hass)
+    postnord_entry.add_to_hass(hass)
+
+    from custom_components.nordic_parcel.api import CarrierNotFoundError
+
+    bring_client = _mock_client(Carrier.BRING)
+    bring_client.track_shipment.side_effect = CarrierNotFoundError("nope")
+    postnord_client = _mock_client(Carrier.POSTNORD)
+    postnord_client.track_shipment.return_value = [
+        Shipment(tracking_id="PN999", carrier=Carrier.POSTNORD)
+    ]
+
+    with patch(
+        "custom_components.nordic_parcel._create_client",
+        side_effect=[bring_client, postnord_client],
+    ):
+        await hass.config_entries.async_setup(bring_entry.entry_id)
+        await hass.async_block_till_done()
+
+    bring_coordinator = bring_entry.runtime_data
+    postnord_coordinator = postnord_entry.runtime_data
+    with (
+        patch.object(bring_coordinator, "add_tracking", new_callable=AsyncMock) as bring_add,
+        patch.object(postnord_coordinator, "add_tracking", new_callable=AsyncMock) as pn_add,
+    ):
+        await hass.services.async_call(
+            DOMAIN, "add_tracking", {"tracking_id": "PN999"}, blocking=True
+        )
+        bring_add.assert_not_awaited()
+        pn_add.assert_awaited_once_with("PN999")
+
+
+async def test_add_tracking_ambiguous_none_recognizes_raises(hass: HomeAssistant) -> None:
+    """With multiple carriers and no filter, an unrecognized ID raises rather than silently adding."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.nordic_parcel.api import CarrierNotFoundError
+    from custom_components.nordic_parcel.const import CONF_API_KEY, CONF_API_UID, CONF_CARRIER
+
+    bring_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bring",
+        data={CONF_CARRIER: Carrier.BRING, CONF_API_UID: "a@b.com", CONF_API_KEY: "k1"},
+        unique_id="bring_probe_none",
+    )
+    postnord_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Postnord",
+        data={CONF_CARRIER: Carrier.POSTNORD, CONF_API_KEY: "k2"},
+        unique_id="postnord_probe_none",
+    )
+    bring_entry.add_to_hass(hass)
+    postnord_entry.add_to_hass(hass)
+
+    bring_client = _mock_client(Carrier.BRING)
+    bring_client.track_shipment.side_effect = CarrierNotFoundError("nope")
+    postnord_client = _mock_client(Carrier.POSTNORD)
+    postnord_client.track_shipment.side_effect = CarrierNotFoundError("nope")
+
+    with patch(
+        "custom_components.nordic_parcel._create_client",
+        side_effect=[bring_client, postnord_client],
+    ):
+        await hass.config_entries.async_setup(bring_entry.entry_id)
+        await hass.async_block_till_done()
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN, "add_tracking", {"tracking_id": "UNKNOWN1"}, blocking=True
+        )
+
+
 async def test_add_tracking_no_matching_carrier(
     hass: HomeAssistant, mock_bring_config_entry
 ) -> None:

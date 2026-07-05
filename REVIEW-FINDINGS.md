@@ -62,6 +62,7 @@ Nordic Parcel is a small (~1,900 LOC source, ~3,000 LOC tests), well-structured 
 - **Verification:** Test with `async_unload_platforms` mocked to return False; assert the coordinator remains in `hass.data[DOMAIN]["coordinators"]` and services remain registered.
 
 ### [SEV-3] add_tracking with no carrier silently adds to an arbitrary entry and fails invisibly
+> **FIXED:** When multiple carriers are configured and no carrier is specified, `handle_add_tracking` now probes each carrier's `track_shipment` and adds to the one that resolves the ID, raising `ServiceValidationError` if none do. Single-carrier and explicit-carrier calls are unchanged. Added two tests.
 - **File:** custom_components/nordic_parcel/__init__.py:139-161, custom_components/nordic_parcel/coordinator.py:166-167
 - **Issue:** Without a `carrier` field, the service adds the ID to `coordinators[0]` — whichever entry happens to be first. If that's the wrong carrier, every refresh raises `CarrierNotFoundError`, which is swallowed at debug level (coordinator.py:166-167). The service call reports success, no sensor ever appears, no issue is raised, and the dead ID stays in config data forever. The README's dashboard-card flow (no carrier field) makes this the *default* path for multi-carrier users.
 - **Evidence:** `handle_add_tracking` picks `coordinators[0]`; nothing validates that the carrier actually knows the tracking number.

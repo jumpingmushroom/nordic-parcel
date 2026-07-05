@@ -14,6 +14,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .api import CarrierApiError, CarrierNotFoundError
 from .api.bring import BringApiClient
 from .api.helthjem import HelthjemApiClient
 from .api.postnord import PostnordApiClient
@@ -161,7 +162,37 @@ def _register_services(hass: HomeAssistant) -> None:
                 translation_placeholders={"tracking_id": tracking_id},
             )
 
-        await coordinators[0].add_tracking(tracking_id)
+        target = coordinators[0]
+        # With several carriers configured and no explicit choice, probe each
+        # to find which one recognizes this tracking ID, so it is not silently
+        # added to the wrong carrier and left permanently unresolved.
+        if carrier_filter is None and len(coordinators) > 1:
+            target = None
+            for coordinator in coordinators:
+                try:
+                    results = await coordinator.client.track_shipment(tracking_id)
+                except CarrierNotFoundError:
+                    continue
+                except CarrierApiError as err:
+                    _LOGGER.warning(
+                        "Error probing %s for tracking %s: %s",
+                        coordinator.client.carrier.value,
+                        tracking_id,
+                        err,
+                    )
+                    continue
+                if results:
+                    target = coordinator
+                    break
+            if target is None:
+                raise ServiceValidationError(
+                    f"Tracking ID {tracking_id} not recognized by any configured carrier",
+                    translation_domain=DOMAIN,
+                    translation_key="tracking_not_found",
+                    translation_placeholders={"tracking_id": tracking_id},
+                )
+
+        await target.add_tracking(tracking_id)
 
     async def handle_remove_tracking(call: ServiceCall) -> None:
         """Handle the remove_tracking service call."""
