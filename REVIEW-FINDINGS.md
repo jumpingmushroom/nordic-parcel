@@ -37,6 +37,7 @@ Nordic Parcel is a small (~1,900 LOC source, ~3,000 LOC tests), well-structured 
 - **Verification:** Test per client: mock a 200 response with `text/html` body and assert `CarrierApiError` is raised (not `ContentTypeError`); test Bring parse with an event missing `dateIso` and assert the shipment still parses.
 
 ### [SEV-3] Stale-tracking / stuck-customs repair issues are orphaned when the shipment disappears
+> **FIXED:** Coordinator now tracks tids with open issues (`_issue_tids`) and deletes both issue types for any tid no longer present in the current shipment set. Added a disappearing-shipment test.
 - **File:** custom_components/nordic_parcel/coordinator.py:195-242
 - **Issue:** Issue deletion only happens in the `else` branches of the per-shipment loop — i.e. only while the tracking ID is still present in this cycle's `shipments`. If the shipment vanishes for any other reason (user calls `remove_tracking` directly, auto-cleanup, carrier starts returning 404), the `stale_tracking_<tid>` / `stuck_customs_<tid>` issue is never deleted and sits in the repairs dashboard forever. The README's claim that "Issues auto-clear when conditions resolve" doesn't hold for this path. (The repair *fix flow* deletes its own issue, but that's only one of the removal paths.)
 - **Evidence:** The loop iterates `shipments.items()`; a tid absent from `shipments` is simply never visited, so neither create nor delete runs for it.

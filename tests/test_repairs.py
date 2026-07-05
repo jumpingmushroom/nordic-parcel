@@ -163,6 +163,40 @@ async def test_stale_tracking_issue_auto_cleared(
     assert issue_reg.async_get_issue(DOMAIN, "stale_tracking_STALE002") is None
 
 
+async def test_stale_tracking_issue_cleared_when_shipment_disappears(
+    hass: HomeAssistant, mock_bring_config_entry, mock_client
+):
+    """A stale issue must clear when its shipment vanishes (e.g. removed)."""
+    hass.config_entries.async_update_entry(
+        mock_bring_config_entry,
+        data={
+            **mock_bring_config_entry.data,
+            CONF_MANUAL_TRACKING: {"GONE001": {"added": "2026-03-01T00:00:00+00:00"}},
+        },
+    )
+
+    coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
+
+    # First update raises a stale issue.
+    mock_client.track_shipment.return_value = [
+        _make_shipment("GONE001", ShipmentStatus.IN_TRANSIT, event_age_days=15)
+    ]
+    await coordinator._async_update_data()
+
+    issue_reg = ir.async_get(hass)
+    assert issue_reg.async_get_issue(DOMAIN, "stale_tracking_GONE001") is not None
+
+    # Shipment disappears entirely (carrier no longer returns it / removed).
+    mock_client.track_shipment.return_value = []
+    hass.config_entries.async_update_entry(
+        mock_bring_config_entry,
+        data={**mock_bring_config_entry.data, CONF_MANUAL_TRACKING: {}},
+    )
+    await coordinator._async_update_data()
+
+    assert issue_reg.async_get_issue(DOMAIN, "stale_tracking_GONE001") is None
+
+
 # --- Stuck in customs issue tests ---
 
 

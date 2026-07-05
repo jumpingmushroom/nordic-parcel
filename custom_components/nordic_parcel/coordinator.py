@@ -73,6 +73,9 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
             except (ValueError, TypeError):
                 _LOGGER.warning("Invalid delivered timestamp for %s: %s", tid, ts_str)
         self._previous_statuses: dict[str, str] = {}
+        # Tracking IDs that currently have a stale/customs repair issue raised,
+        # so issues can be cleared when a shipment disappears entirely.
+        self._issue_tids: set[str] = set()
 
     @property
     def manual_tracking_ids(self) -> list[str]:
@@ -198,6 +201,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
 
         # 3.5 Detect repair issues
         now = datetime.now(UTC)
+        current_issue_tids: set[str] = set()
         for tid, shipment in shipments.items():
             # Stale tracking: no update for 14+ days, not delivered
             stale_issue_id = f"stale_tracking_{tid}"
@@ -221,6 +225,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                     },
                     data={"tracking_id": tid, "carrier": shipment.carrier.value},
                 )
+                current_issue_tids.add(tid)
             else:
                 ir.async_delete_issue(self.hass, DOMAIN, stale_issue_id)
 
@@ -244,8 +249,16 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                         "days": str((now - last.timestamp).days),
                     },
                 )
+                current_issue_tids.add(tid)
             else:
                 ir.async_delete_issue(self.hass, DOMAIN, customs_issue_id)
+
+        # Clear issues for shipments that vanished entirely since last cycle
+        # (removed by the user, auto-cleanup, or the carrier dropping them).
+        for tid in self._issue_tids - shipments.keys():
+            ir.async_delete_issue(self.hass, DOMAIN, f"stale_tracking_{tid}")
+            ir.async_delete_issue(self.hass, DOMAIN, f"stuck_customs_{tid}")
+        self._issue_tids = current_issue_tids
 
         # 4. Track delivery timestamps
         for tid, shipment in shipments.items():
