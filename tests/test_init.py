@@ -386,7 +386,7 @@ async def test_add_tracking_probes_carriers_when_ambiguous(hass: HomeAssistant) 
 
 
 async def test_add_tracking_ambiguous_none_recognizes_raises(hass: HomeAssistant) -> None:
-    """With multiple carriers and no filter, an unrecognized ID raises rather than silently adding."""
+    """Ambiguous add of an ID no carrier recognizes must raise, not silently add."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.nordic_parcel.api import CarrierNotFoundError

@@ -69,9 +69,7 @@ async def async_get_config_entry_diagnostics(
         for key in _TRACKING_KEYED:
             keyed = entry_data.get(key)
             if isinstance(keyed, dict):
-                entry_data[key] = {
-                    _mask_tracking_id(tid): value for tid, value in keyed.items()
-                }
+                entry_data[key] = {_mask_tracking_id(tid): value for tid, value in keyed.items()}
 
     return {
         "config_entry": redacted_entry,
