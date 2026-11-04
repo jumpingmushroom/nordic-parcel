@@ -12,7 +12,7 @@
 
 1. **Create the API client** at `custom_components/nordic_parcel/api/<carrier>.py`
    - Implement the `CarrierClient` protocol from `custom_components/nordic_parcel/api/__init__.py`
-   - Required methods: `authenticate()`, `get_shipments()`, `track_shipment()`, `close()`
+   - Required methods: `authenticate()`, `track_shipment()`
    - Map carrier-specific statuses to `ShipmentStatus` enum values
 
 2. **Add the carrier enum** in `custom_components/nordic_parcel/const.py`:
@@ -53,7 +53,7 @@
 
 ## Testing
 
-Tests use `pytest` with `pytest-homeassistant-custom-component` for HA fixtures and `aioresponses` for HTTP mocking.
+Tests use `pytest` with `pytest-homeassistant-custom-component` for HA fixtures.
 
 ```bash
 # Run all tests

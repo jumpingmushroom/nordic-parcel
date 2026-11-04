@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.nordic_parcel.api import CarrierApiError
 from custom_components.nordic_parcel.const import (
@@ -52,7 +54,7 @@ async def test_bring_flow_success(hass: HomeAssistant) -> None:
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(MOCK_SETUP, return_value=True),
         patch(
-            "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
+            "custom_components.nordic_parcel.api.bring.BringApiClient.authenticate",
             return_value=True,
         ),
     ):
@@ -93,7 +95,7 @@ async def test_bring_flow_auth_failure(hass: HomeAssistant) -> None:
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(
-            "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
+            "custom_components.nordic_parcel.api.bring.BringApiClient.authenticate",
             return_value=False,
         ),
     ):
@@ -122,7 +124,7 @@ async def test_bring_flow_connection_error(hass: HomeAssistant) -> None:
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(
-            "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
+            "custom_components.nordic_parcel.api.bring.BringApiClient.authenticate",
             side_effect=CarrierApiError("Connection failed"),
         ),
     ):
@@ -152,7 +154,7 @@ async def test_postnord_flow_success(hass: HomeAssistant) -> None:
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(MOCK_SETUP, return_value=True),
         patch(
-            "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
+            "custom_components.nordic_parcel.api.postnord.PostnordApiClient.authenticate",
             return_value=True,
         ),
     ):
@@ -186,7 +188,7 @@ async def test_postnord_flow_auth_failure(hass: HomeAssistant) -> None:
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(
-            "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
+            "custom_components.nordic_parcel.api.postnord.PostnordApiClient.authenticate",
             return_value=False,
         ),
     ):
@@ -212,7 +214,7 @@ async def test_postnord_flow_connection_error(hass: HomeAssistant) -> None:
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(
-            "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
+            "custom_components.nordic_parcel.api.postnord.PostnordApiClient.authenticate",
             side_effect=CarrierApiError("Connection failed"),
         ),
     ):
@@ -239,7 +241,7 @@ async def test_helthjem_flow_success(hass: HomeAssistant) -> None:
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(MOCK_SETUP, return_value=True),
         patch(
-            "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
+            "custom_components.nordic_parcel.api.helthjem.HelthjemApiClient.authenticate",
             return_value=True,
         ),
     ):
@@ -277,7 +279,7 @@ async def test_helthjem_flow_auth_failure(hass: HomeAssistant) -> None:
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(
-            "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
+            "custom_components.nordic_parcel.api.helthjem.HelthjemApiClient.authenticate",
             return_value=False,
         ),
     ):
@@ -306,7 +308,7 @@ async def test_helthjem_flow_connection_error(hass: HomeAssistant) -> None:
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(
-            "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
+            "custom_components.nordic_parcel.api.helthjem.HelthjemApiClient.authenticate",
             side_effect=CarrierApiError("Connection failed"),
         ),
     ):
@@ -342,7 +344,7 @@ async def test_reauth_bring_success(hass: HomeAssistant, mock_bring_config_entry
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(MOCK_SETUP, return_value=True),
         patch(
-            "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
+            "custom_components.nordic_parcel.api.bring.BringApiClient.authenticate",
             return_value=True,
         ),
     ):
@@ -368,7 +370,7 @@ async def test_reauth_bring_invalid_auth(hass: HomeAssistant, mock_bring_config_
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(
-            "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
+            "custom_components.nordic_parcel.api.bring.BringApiClient.authenticate",
             return_value=False,
         ),
     ):
@@ -392,7 +394,7 @@ async def test_reauth_bring_cannot_connect(hass: HomeAssistant, mock_bring_confi
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(
-            "custom_components.nordic_parcel.config_flow.BringApiClient.authenticate",
+            "custom_components.nordic_parcel.api.bring.BringApiClient.authenticate",
             side_effect=CarrierApiError("Connection failed"),
         ),
     ):
@@ -418,7 +420,7 @@ async def test_reauth_postnord_success(hass: HomeAssistant, mock_postnord_config
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(MOCK_SETUP, return_value=True),
         patch(
-            "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
+            "custom_components.nordic_parcel.api.postnord.PostnordApiClient.authenticate",
             return_value=True,
         ),
     ):
@@ -445,7 +447,7 @@ async def test_reauth_postnord_invalid_auth(
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(
-            "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
+            "custom_components.nordic_parcel.api.postnord.PostnordApiClient.authenticate",
             return_value=False,
         ),
     ):
@@ -471,7 +473,7 @@ async def test_reauth_postnord_cannot_connect(
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(
-            "custom_components.nordic_parcel.config_flow.PostnordApiClient.authenticate",
+            "custom_components.nordic_parcel.api.postnord.PostnordApiClient.authenticate",
             side_effect=CarrierApiError("Connection failed"),
         ),
     ):
@@ -497,7 +499,7 @@ async def test_reauth_helthjem_success(hass: HomeAssistant, mock_helthjem_config
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(MOCK_SETUP, return_value=True),
         patch(
-            "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
+            "custom_components.nordic_parcel.api.helthjem.HelthjemApiClient.authenticate",
             return_value=True,
         ),
     ):
@@ -525,7 +527,7 @@ async def test_reauth_helthjem_invalid_auth(
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(
-            "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
+            "custom_components.nordic_parcel.api.helthjem.HelthjemApiClient.authenticate",
             return_value=False,
         ),
     ):
@@ -551,7 +553,7 @@ async def test_reauth_helthjem_cannot_connect(
     with (
         patch(MOCK_SESSION, return_value=MagicMock()),
         patch(
-            "custom_components.nordic_parcel.config_flow.HelthjemApiClient.authenticate",
+            "custom_components.nordic_parcel.api.helthjem.HelthjemApiClient.authenticate",
             side_effect=CarrierApiError("Connection failed"),
         ),
     ):
@@ -594,3 +596,93 @@ async def test_options_flow(hass: HomeAssistant, mock_bring_config_entry) -> Non
         CONF_SCAN_INTERVAL: 600,
         CONF_CLEANUP_DAYS: 7,
     }
+
+
+async def test_reauth_with_new_account_updates_identity(
+    hass: HomeAssistant, mock_bring_config_entry
+) -> None:
+    """Reauth with a different Bring UID must move the unique ID and title with it."""
+    with patch(MOCK_SETUP, return_value=True):
+        await hass.config_entries.async_setup(mock_bring_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await mock_bring_config_entry.start_reauth_flow(hass)
+
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(MOCK_SETUP, return_value=True),
+        patch(
+            "custom_components.nordic_parcel.api.bring.BringApiClient.authenticate",
+            return_value=True,
+        ),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_API_UID: "new@example.com", CONF_API_KEY: "new-key"},
+        )
+
+    assert result["reason"] == "reauth_successful"
+    assert mock_bring_config_entry.unique_id == "bring_new@example.com"
+    assert mock_bring_config_entry.title == "Bring (new@example.com)"
+
+
+async def test_reauth_postnord_new_key_updates_unique_id(
+    hass: HomeAssistant, mock_postnord_config_entry
+) -> None:
+    """A new Postnord key must update the key-derived unique ID."""
+    with patch(MOCK_SETUP, return_value=True):
+        await hass.config_entries.async_setup(mock_postnord_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await mock_postnord_config_entry.start_reauth_flow(hass)
+
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(MOCK_SETUP, return_value=True),
+        patch(
+            "custom_components.nordic_parcel.api.postnord.PostnordApiClient.authenticate",
+            return_value=True,
+        ),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_API_KEY: "new-postnord-key"},
+        )
+
+    assert result["reason"] == "reauth_successful"
+    digest = hashlib.sha256(b"new-postnord-key").hexdigest()[:8]
+    assert mock_postnord_config_entry.unique_id == f"postnord_{digest}"
+
+
+async def test_reauth_into_another_entrys_account_aborts(
+    hass: HomeAssistant, mock_bring_config_entry
+) -> None:
+    """Reauth must not turn one entry into a duplicate of another."""
+    other = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bring (other@example.com)",
+        data={CONF_CARRIER: Carrier.BRING, CONF_API_UID: "other@example.com", CONF_API_KEY: "k"},
+        unique_id="bring_other@example.com",
+    )
+    other.add_to_hass(hass)
+    with patch(MOCK_SETUP, return_value=True):
+        await hass.config_entries.async_setup(mock_bring_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await mock_bring_config_entry.start_reauth_flow(hass)
+
+    with (
+        patch(MOCK_SESSION, return_value=MagicMock()),
+        patch(
+            "custom_components.nordic_parcel.api.bring.BringApiClient.authenticate",
+            return_value=True,
+        ),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_API_UID: "other@example.com", CONF_API_KEY: "k"},
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert mock_bring_config_entry.unique_id == "bring_test@example.com"

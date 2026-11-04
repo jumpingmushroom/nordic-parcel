@@ -44,7 +44,6 @@ def _mock_client(carrier: Carrier = Carrier.BRING) -> AsyncMock:
     """Create a mock carrier client."""
     client = AsyncMock()
     client.carrier = carrier
-    client.get_shipments = AsyncMock(return_value=[])
     client.track_shipment = AsyncMock(return_value=[])
     return client
 

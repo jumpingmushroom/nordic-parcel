@@ -55,7 +55,6 @@ def mock_client() -> AsyncMock:
     """Create a mock CarrierClient."""
     client = AsyncMock()
     client.carrier = Carrier.BRING
-    client.get_shipments = AsyncMock(return_value=[])
     client.track_shipment = AsyncMock(return_value=[])
     return client
 
@@ -73,7 +72,6 @@ async def test_update_no_tracking_ids(hass: HomeAssistant, coordinator, mock_cli
     """Test update with no manual tracking IDs returns empty dict."""
     result = await coordinator._async_update_data()
     assert result == {}
-    mock_client.get_shipments.assert_awaited_once()
     mock_client.track_shipment.assert_not_awaited()
 
 
@@ -139,16 +137,6 @@ async def test_update_preserves_concurrent_add_tracking(
     assert "OLD1" in manual_after
 
 
-async def test_update_auth_error_raises_config_entry_auth_failed(
-    hass: HomeAssistant, coordinator, mock_client
-):
-    """Test that CarrierAuthError from get_shipments raises ConfigEntryAuthFailed."""
-    mock_client.get_shipments.side_effect = CarrierAuthError("Bad auth")
-
-    with pytest.raises(ConfigEntryAuthFailed):
-        await coordinator._async_update_data()
-
-
 async def test_update_auth_error_on_track_raises_config_entry_auth_failed(
     hass: HomeAssistant,
     mock_bring_config_entry,
@@ -168,16 +156,6 @@ async def test_update_auth_error_on_track_raises_config_entry_auth_failed(
     coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
 
     with pytest.raises(ConfigEntryAuthFailed):
-        await coordinator._async_update_data()
-
-
-async def test_update_rate_limit_raises_update_failed(
-    hass: HomeAssistant, coordinator, mock_client
-):
-    """Test that CarrierRateLimitError from get_shipments raises UpdateFailed."""
-    mock_client.get_shipments.side_effect = CarrierRateLimitError("Too fast")
-
-    with pytest.raises(UpdateFailed, match="Rate limited"):
         await coordinator._async_update_data()
 
 
@@ -595,21 +573,6 @@ async def test_auto_cleanup_disabled_when_zero(
 # --- add_tracking / remove_tracking tests ---
 
 
-async def test_add_tracking_uppercases_id(
-    hass: HomeAssistant,
-    mock_bring_config_entry,
-    mock_client,
-):
-    """Test that add_tracking uppercases the tracking ID."""
-    coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
-    with patch.object(coordinator, "async_request_refresh"):
-        await coordinator.add_tracking("abc123")
-
-    manual = mock_bring_config_entry.data.get(CONF_MANUAL_TRACKING, {})
-    assert "ABC123" in manual
-    assert "abc123" not in manual
-
-
 async def test_add_tracking_persists_to_config_entry(
     hass: HomeAssistant,
     mock_bring_config_entry,
@@ -625,12 +588,12 @@ async def test_add_tracking_persists_to_config_entry(
     assert "added" in manual["TRACK999"]
 
 
-async def test_remove_tracking_uppercases_and_removes(
+async def test_remove_tracking_removes_id(
     hass: HomeAssistant,
     mock_bring_config_entry,
     mock_client,
 ):
-    """Test that remove_tracking uppercases and removes the ID."""
+    """Test that remove_tracking removes the ID."""
     hass.config_entries.async_update_entry(
         mock_bring_config_entry,
         data={
@@ -641,7 +604,7 @@ async def test_remove_tracking_uppercases_and_removes(
 
     coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
     with patch.object(coordinator, "async_request_refresh"):
-        await coordinator.remove_tracking("track001")
+        await coordinator.remove_tracking("TRACK001")
 
     manual = mock_bring_config_entry.data.get(CONF_MANUAL_TRACKING, {})
     assert "TRACK001" not in manual
@@ -714,3 +677,94 @@ async def test_consignment_replaced_with_package_ids(
     assert "CONS001" not in manual
     assert "PKG001" in manual
     assert "PKG002" in manual
+
+
+# --- Transient failure and per-parcel state tests ---
+
+
+async def test_transient_error_keeps_last_known_shipment(
+    hass: HomeAssistant,
+    mock_bring_config_entry,
+    mock_client,
+):
+    """A carrier hiccup must not drop a parcel from the coordinator data."""
+    hass.config_entries.async_update_entry(
+        mock_bring_config_entry,
+        data={
+            **mock_bring_config_entry.data,
+            CONF_MANUAL_TRACKING: {"TRACK001": {"added": "2026-04-13T00:00:00+00:00"}},
+        },
+    )
+    coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
+    shipment = Shipment(tracking_id="TRACK001", carrier=Carrier.BRING)
+    coordinator.data = {"TRACK001": shipment}
+    mock_client.track_shipment.side_effect = CarrierApiError("Bad gateway")
+
+    assert await coordinator._async_update_data() == {"TRACK001": shipment}
+
+
+async def test_not_found_drops_shipment(
+    hass: HomeAssistant,
+    mock_bring_config_entry,
+    mock_client,
+):
+    """A shipment the carrier no longer knows is not carried forward."""
+    hass.config_entries.async_update_entry(
+        mock_bring_config_entry,
+        data={
+            **mock_bring_config_entry.data,
+            CONF_MANUAL_TRACKING: {"TRACK001": {"added": "2026-04-13T00:00:00+00:00"}},
+        },
+    )
+    coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
+    coordinator.data = {"TRACK001": Shipment(tracking_id="TRACK001", carrier=Carrier.BRING)}
+    mock_client.track_shipment.side_effect = CarrierNotFoundError("Gone")
+
+    assert await coordinator._async_update_data() == {}
+
+
+async def test_shipment_without_id_keeps_users_tracking_id(
+    hass: HomeAssistant,
+    mock_bring_config_entry,
+    mock_client,
+):
+    """A payload with no ID must not replace the manual tracking ID."""
+    hass.config_entries.async_update_entry(
+        mock_bring_config_entry,
+        data={
+            **mock_bring_config_entry.data,
+            CONF_MANUAL_TRACKING: {"TRACK001": {"added": "2026-04-13T00:00:00+00:00"}},
+        },
+    )
+    coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
+    mock_client.track_shipment.return_value = [Shipment(tracking_id="", carrier=Carrier.BRING)]
+
+    result = await coordinator._async_update_data()
+
+    assert list(result) == ["TRACK001"]
+    assert list(mock_bring_config_entry.data[CONF_MANUAL_TRACKING]) == ["TRACK001"]
+
+
+async def test_remove_tracking_forgets_per_parcel_state(
+    hass: HomeAssistant,
+    mock_bring_config_entry,
+    mock_client,
+):
+    """A re-added parcel must behave like a new one."""
+    hass.config_entries.async_update_entry(
+        mock_bring_config_entry,
+        data={
+            **mock_bring_config_entry.data,
+            CONF_MANUAL_TRACKING: {"TRACK001": {"added": "2026-04-13T00:00:00+00:00"}},
+            CONF_DELIVERED_TIMESTAMPS: {"TRACK001": "2026-04-14T00:00:00+00:00"},
+        },
+    )
+    coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
+    coordinator._previous_statuses["TRACK001"] = "delivered"
+
+    with patch.object(coordinator, "async_request_refresh"):
+        await coordinator.remove_tracking("TRACK001")
+
+    assert "TRACK001" not in coordinator._previous_statuses
+    assert "TRACK001" not in coordinator._delivered_timestamps
+    assert mock_bring_config_entry.data[CONF_DELIVERED_TIMESTAMPS] == {}

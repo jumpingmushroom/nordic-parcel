@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 
 import aiohttp
 
@@ -49,22 +49,21 @@ def _map_status(postnord_status: str) -> ShipmentStatus:
 
 
 def _parse_event(event: dict) -> TrackingEvent:
-    """Parse a Postnord event dict into a TrackingEvent."""
+    """Parse a Postnord event dict into a TrackingEvent.
+
+    Raises on a malformed event; callers skip those.
+    """
     # Postnord uses eventTime as ISO string
     timestamp_str = event.get("eventTime") or event.get("eventDate", "")
-    try:
-        timestamp = ensure_aware(datetime.fromisoformat(timestamp_str))
-    except ValueError:
-        timestamp = datetime.now(UTC)
+    timestamp = ensure_aware(datetime.fromisoformat(timestamp_str))
 
-    location_data = event.get("location", {})
-    location = location_data.get("displayName")
+    location = (event.get("location") or {}).get("displayName")
 
     return TrackingEvent(
         timestamp=timestamp,
         description=event.get("eventDescription", event.get("status", "")),
         location=location,
-        status=_map_status(event.get("status", "")),
+        status=_map_status(event.get("status") or ""),
     )
 
 
@@ -80,7 +79,10 @@ def _parse_shipment(shipment_data: dict) -> Shipment:
     events: list[TrackingEvent] = []
     for item in shipment_data.get("items", []):
         for event in item.get("events", []):
-            events.append(_parse_event(event))
+            try:
+                events.append(_parse_event(event))
+            except (AttributeError, KeyError, TypeError, ValueError) as err:
+                _LOGGER.debug("Skipping malformed Postnord event: %s", err)
 
     # Sort events newest-first
     events.sort(key=lambda e: e.timestamp, reverse=True)
@@ -107,7 +109,6 @@ def _parse_shipment(shipment_data: dict) -> Shipment:
         recipient=None,  # Postnord API doesn't expose recipient name
         estimated_delivery=estimated_delivery,
         events=events,
-        raw_data=shipment_data,
     )
 
 
@@ -138,17 +139,13 @@ class PostnordApiClient:
                         "apikey": self._api_key,
                     },
                 )
+            resp.release()
+            if resp.status == 429 or resp.status >= 500:
+                raise CarrierApiError(f"Postnord API returned status {resp.status}")
             # 401/403 = bad key, anything else = key is valid
             return resp.status not in (401, 403)
         except (aiohttp.ClientError, TimeoutError) as err:
             raise CarrierApiError("Could not connect to Postnord API") from err
-
-    async def get_shipments(self) -> list[Shipment]:
-        """Postnord API doesn't support listing all shipments for an account.
-
-        Returns an empty list. Users must add tracking numbers manually.
-        """
-        return []
 
     async def track_shipment(self, tracking_id: str) -> list[Shipment]:
         """Fetch tracking data for a single shipment."""
@@ -163,19 +160,26 @@ class PostnordApiClient:
                     },
                 )
         except (aiohttp.ClientError, TimeoutError) as err:
-            raise CarrierApiError(f"Connection error: {err}") from err
+            # Never format err: aiohttp errors can carry the URL, which holds the API key.
+            raise CarrierApiError("Could not connect to Postnord API") from err
 
+        if resp.status != 200:
+            resp.release()
         if resp.status in (401, 403):
             raise CarrierAuthError("Invalid Postnord API key")
         if resp.status == 429:
             raise CarrierRateLimitError("Postnord API rate limit exceeded")
+        if resp.status == 404:
+            raise CarrierNotFoundError(f"No shipment found for {tracking_id}")
         if resp.status != 200:
             raise CarrierApiError(f"Postnord API returned status {resp.status}")
 
         try:
-            data = await resp.json()
-        except (aiohttp.ClientError, ValueError) as err:
-            raise CarrierApiError(f"Invalid Postnord API response: {err}") from err
+            async with asyncio.timeout(10):
+                data = await resp.json()
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            # Never format err: see above.
+            raise CarrierApiError("Invalid Postnord API response") from err
 
         tracking_resp = data.get("TrackingInformationResponse", {})
         shipments = tracking_resp.get("shipments", [])
@@ -184,6 +188,3 @@ class PostnordApiClient:
             raise CarrierNotFoundError(f"No shipment found for {tracking_id}")
 
         return [_parse_shipment(shipments[0])]
-
-    async def close(self) -> None:
-        """No-op — session lifecycle managed externally."""

@@ -18,7 +18,15 @@ from .const import (
 )
 from .coordinator import NordicParcelCoordinator
 
-TO_REDACT = {CONF_API_KEY, CONF_API_UID, CONF_CLIENT_ID, CONF_CLIENT_SECRET}
+# title and unique_id embed the Bring API UID.
+TO_REDACT = {
+    CONF_API_KEY,
+    CONF_API_UID,
+    CONF_CLIENT_ID,
+    CONF_CLIENT_SECRET,
+    "title",
+    "unique_id",
+}
 
 # Config-entry data keyed by full tracking IDs, which must be masked by key.
 _TRACKING_KEYED = (CONF_MANUAL_TRACKING, CONF_DELIVERED_TIMESTAMPS)

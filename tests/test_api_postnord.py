@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import aiohttp
 import pytest
 
 from custom_components.nordic_parcel.api import (
@@ -129,7 +130,7 @@ class TestTrackShipment:
         import aiohttp
 
         session.get = AsyncMock(side_effect=aiohttp.ClientError("timeout"))
-        with pytest.raises(CarrierApiError, match="Connection error"):
+        with pytest.raises(CarrierApiError, match="Could not connect"):
             await client.track_shipment("00340000000000000001")
 
     async def test_track_shipment_server_error(self, postnord_client):
@@ -137,15 +138,6 @@ class TestTrackShipment:
         session.get = AsyncMock(return_value=_mock_response(status=500))
         with pytest.raises(CarrierApiError, match="status 500"):
             await client.track_shipment("00340000000000000001")
-
-
-class TestGetShipments:
-    """Tests for PostnordApiClient.get_shipments()."""
-
-    async def test_get_shipments_returns_empty(self, postnord_client):
-        client, _ = postnord_client
-        result = await client.get_shipments()
-        assert result == []
 
 
 class TestStatusMapping:
@@ -188,3 +180,80 @@ class TestCarrierProperty:
     def test_carrier_is_postnord(self, postnord_client):
         client, _ = postnord_client
         assert client.carrier == Carrier.POSTNORD
+
+
+class TestRobustness:
+    """Tests for error statuses, malformed payloads and secret handling."""
+
+    @pytest.mark.parametrize("status", [429, 500, 503])
+    async def test_authenticate_unverifiable_status_raises(self, postnord_client, status):
+        client, session = postnord_client
+        session.get = AsyncMock(return_value=_mock_response(status=status))
+        with pytest.raises(CarrierApiError):
+            await client.authenticate()
+
+    async def test_authenticate_releases_response(self, postnord_client):
+        client, session = postnord_client
+        resp = _mock_response(status=400)
+        session.get = AsyncMock(return_value=resp)
+        assert await client.authenticate() is True
+        resp.release.assert_called_once()
+
+    async def test_track_shipment_404_is_not_found(self, postnord_client):
+        client, session = postnord_client
+        resp = _mock_response(status=404)
+        session.get = AsyncMock(return_value=resp)
+        with pytest.raises(CarrierNotFoundError):
+            await client.track_shipment("UNKNOWN1")
+        resp.release.assert_called_once()
+
+    async def test_invalid_response_error_does_not_contain_api_key(self, postnord_client):
+        client, session = postnord_client
+        request_info = MagicMock()
+        request_info.real_url = "https://api2.postnord.com/x?apikey=test-postnord-key"
+        resp = _mock_response()
+        resp.json = AsyncMock(
+            side_effect=aiohttp.ContentTypeError(request_info, (), status=200, message="html")
+        )
+        session.get = AsyncMock(return_value=resp)
+        with pytest.raises(CarrierApiError) as exc_info:
+            await client.track_shipment("TRACK001")
+        assert "test-postnord-key" not in str(exc_info.value)
+
+    async def test_track_shipment_body_timeout_raises_api_error(self, postnord_client):
+        client, session = postnord_client
+        resp = _mock_response()
+        resp.json = AsyncMock(side_effect=TimeoutError)
+        session.get = AsyncMock(return_value=resp)
+        with pytest.raises(CarrierApiError):
+            await client.track_shipment("TRACK001")
+
+    async def test_malformed_events_do_not_become_the_newest_event(self, postnord_client):
+        client, session = postnord_client
+        payload = {
+            "TrackingInformationResponse": {
+                "shipments": [
+                    {
+                        "shipmentId": "SHIP1",
+                        "items": [
+                            {
+                                "events": [
+                                    {"eventTime": "not-a-date", "status": "EN_ROUTE"},
+                                    {"eventDate": None, "status": "EN_ROUTE"},
+                                    {
+                                        "eventTime": "2026-04-13T08:00:00",
+                                        "status": "DELIVERED",
+                                        "location": None,
+                                    },
+                                ]
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+        session.get = AsyncMock(return_value=_mock_response(payload=payload))
+        (shipment,) = await client.track_shipment("SHIP1")
+        assert shipment.status == ShipmentStatus.DELIVERED
+        assert len(shipment.events) == 1
+        assert shipment.events[0].location is None

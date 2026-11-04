@@ -31,7 +31,11 @@ class StaleTrackingRepairFlow(RepairsFlow):
             ir.async_delete_issue(self.hass, DOMAIN, self.issue_id)
             return self.async_create_entry(data={})
 
-        return self.async_show_form(step_id="init")
+        issue = ir.async_get(self.hass).async_get_issue(DOMAIN, self.issue_id)
+        return self.async_show_form(
+            step_id="init",
+            description_placeholders=issue.translation_placeholders if issue else None,
+        )
 
 
 async def async_create_fix_flow(

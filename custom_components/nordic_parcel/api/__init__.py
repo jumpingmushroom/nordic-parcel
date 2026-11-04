@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from ..const import Carrier, ShipmentStatus
 
@@ -43,7 +43,6 @@ class Shipment:
     estimated_delivery: datetime | None = None
     events: list[TrackingEvent] = field(default_factory=list)
     """Tracking events ordered newest-first. Carrier clients must sort before returning."""
-    raw_data: dict = field(default_factory=dict)
 
     @property
     def last_event(self) -> TrackingEvent | None:
@@ -67,7 +66,6 @@ class CarrierNotFoundError(CarrierApiError):
     """Shipment not found."""
 
 
-@runtime_checkable
 class CarrierClient(Protocol):
     """Protocol that all carrier API clients must implement."""
 
@@ -80,14 +78,6 @@ class CarrierClient(Protocol):
         """Validate credentials. Return True if valid."""
         ...
 
-    async def get_shipments(self) -> list[Shipment]:
-        """Fetch all shipments from the authenticated account."""
-        ...
-
     async def track_shipment(self, tracking_id: str) -> list[Shipment]:
         """Fetch tracking data for a shipment (may return multiple packages)."""
-        ...
-
-    async def close(self) -> None:
-        """Close the underlying HTTP session."""
         ...

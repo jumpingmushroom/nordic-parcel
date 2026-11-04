@@ -52,7 +52,6 @@ def mock_client() -> AsyncMock:
     """Create a mock CarrierClient."""
     client = AsyncMock()
     client.carrier = Carrier.BRING
-    client.get_shipments = AsyncMock(return_value=[])
     client.track_shipment = AsyncMock(return_value=[])
     return client
 
@@ -280,25 +279,6 @@ async def test_customs_issue_auto_cleared_on_status_change(
 # --- Auth failed issue tests ---
 
 
-async def test_auth_failed_issue_created_on_get_shipments(
-    hass: HomeAssistant, mock_bring_config_entry, mock_client
-):
-    """Test that auth issue is created when get_shipments fails."""
-    from custom_components.nordic_parcel.api import CarrierAuthError
-
-    mock_client.get_shipments.side_effect = CarrierAuthError("Bad auth")
-
-    coordinator = NordicParcelCoordinator(hass, mock_bring_config_entry, mock_client)
-
-    with pytest.raises(ConfigEntryAuthFailed):
-        await coordinator._async_update_data()
-
-    issue_reg = ir.async_get(hass)
-    issue = issue_reg.async_get_issue(DOMAIN, f"auth_failed_{mock_bring_config_entry.entry_id}")
-    assert issue is not None
-    assert issue.severity == ir.IssueSeverity.ERROR
-
-
 # --- Repair flow execution tests ---
 
 
@@ -348,6 +328,9 @@ async def test_repair_flow_confirm_removes_tracking(
     # Show form
     result = await flow.async_step_init()
     assert result["type"] == data_entry_flow.FlowResultType.FORM
+    # The fix-flow text is templated with the issue's placeholders.
+    assert result["description_placeholders"]["tracking_id"] == "STALE999"
+    assert result["description_placeholders"]["days"] == "15"
 
     # Confirm removal
     with mock_patch.object(coordinator, "remove_tracking", new_callable=AsyncMock) as mock_remove:

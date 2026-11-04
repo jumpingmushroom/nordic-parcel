@@ -84,7 +84,6 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
 
     async def add_tracking(self, tracking_id: str) -> None:
         """Add a tracking number to manual tracking list."""
-        tracking_id = tracking_id.strip().upper()
         data = dict(self.config_entry.data)
         manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
         manual[tracking_id] = {"added": datetime.now(UTC).isoformat()}
@@ -94,11 +93,16 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
 
     async def remove_tracking(self, tracking_id: str) -> None:
         """Remove a tracking number from manual tracking list."""
-        tracking_id = tracking_id.strip().upper()
+        # Forget per-parcel state too, so a later re-add starts from a first poll.
+        self._previous_statuses.pop(tracking_id, None)
+        self._delivered_timestamps.pop(tracking_id, None)
         data = dict(self.config_entry.data)
         manual = dict(data.get(CONF_MANUAL_TRACKING, {}))
         manual.pop(tracking_id, None)
         data[CONF_MANUAL_TRACKING] = manual
+        data[CONF_DELIVERED_TIMESTAMPS] = {
+            tid: ts.isoformat() for tid, ts in self._delivered_timestamps.items()
+        }
         self.hass.config_entries.async_update_entry(self.config_entry, data=data)
         await self.async_request_refresh()
 
@@ -115,34 +119,15 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
         manual_removed: set[str] = set()
         manual_added: dict[str, dict] = {}
 
-        # 1. Fetch auto-discovered shipments from account
-        try:
-            account_shipments = await self.client.get_shipments()
-            for s in account_shipments:
-                shipments[s.tracking_id] = s
-        except CarrierAuthError as err:
-            ir.async_create_issue(
-                self.hass,
-                DOMAIN,
-                f"auth_failed_{self.config_entry.entry_id}",
-                is_fixable=False,
-                severity=ir.IssueSeverity.ERROR,
-                translation_key="auth_failed",
-                translation_placeholders={"carrier": self.client.carrier.value},
-            )
-            raise ConfigEntryAuthFailed from err
-        except CarrierRateLimitError as err:
-            raise UpdateFailed("Rate limited by carrier API") from err
-        except CarrierApiError as err:
-            _LOGGER.warning("Failed to fetch account shipments: %s", err)
-
-        # 2. Fetch manually-tracked shipments
+        # 1. Fetch manually-tracked shipments
         for tracking_id in list(manual.keys()):
             if tracking_id in shipments:
                 continue
             try:
                 results = await self.client.track_shipment(tracking_id)
                 for shipment in results:
+                    # A payload without an ID must not replace the user's tracking ID
+                    shipment.tracking_id = shipment.tracking_id or tracking_id
                     shipments[shipment.tracking_id.upper()] = shipment
                 # Replace consignment numbers with resolved package numbers
                 result_ids = [s.tracking_id.upper() for s in results]
@@ -176,8 +161,11 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                 _LOGGER.debug("Tracking ID %s not found, skipping", tracking_id)
             except CarrierApiError as err:
                 _LOGGER.warning("Failed to track %s: %s", tracking_id, err)
+                # Keep the last known state so a transient failure doesn't drop the sensor
+                if self.data and tracking_id in self.data:
+                    shipments[tracking_id] = self.data[tracking_id]
 
-        # 3. Fire status change events
+        # 2. Fire status change events
         for tid, shipment in shipments.items():
             old_status = self._previous_statuses.get(tid)
             new_status = shipment.status.value
@@ -199,7 +187,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                     self.hass.bus.async_fire(granular_event, event_data)
             self._previous_statuses[tid] = new_status
 
-        # 3.5 Detect repair issues
+        # 2.5 Detect repair issues
         now = datetime.now(UTC)
         current_issue_tids: set[str] = set()
         for tid, shipment in shipments.items():
@@ -260,7 +248,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
             ir.async_delete_issue(self.hass, DOMAIN, f"stuck_customs_{tid}")
         self._issue_tids = current_issue_tids
 
-        # 4. Track delivery timestamps
+        # 3. Track delivery timestamps
         for tid, shipment in shipments.items():
             if shipment.status == ShipmentStatus.DELIVERED:
                 if tid not in self._delivered_timestamps:
@@ -278,7 +266,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                     self._delivered_timestamps.pop(tid)
                     config_changed = True
 
-        # 5. Auto-cleanup delivered parcels past the threshold
+        # 4. Auto-cleanup delivered parcels past the threshold
         cleanup_days = self.config_entry.options.get(CONF_CLEANUP_DAYS, DEFAULT_CLEANUP_DAYS)
         if cleanup_days > 0:
             now = datetime.now(UTC)
@@ -296,7 +284,7 @@ class NordicParcelCoordinator(DataUpdateCoordinator[dict[str, Shipment]]):
                     manual_removed.add(tid)
                 config_changed = True
 
-        # 6. Batch-write config entry if anything changed
+        # 5. Batch-write config entry if anything changed
         if config_changed:
             # Re-read config entry data and merge only this cycle's deltas, so
             # add_tracking/remove_tracking calls that ran during the API awaits

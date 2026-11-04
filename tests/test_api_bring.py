@@ -187,15 +187,6 @@ class TestTrackShipment:
             await client.track_shipment("370000000000123456")
 
 
-class TestGetShipments:
-    """Tests for BringApiClient.get_shipments()."""
-
-    async def test_get_shipments_returns_empty(self, bring_client):
-        client, _ = bring_client
-        result = await client.get_shipments()
-        assert result == []
-
-
 class TestStatusMapping:
     """Tests for Bring status mapping."""
 
@@ -234,3 +225,61 @@ class TestCarrierProperty:
     def test_carrier_is_bring(self, bring_client):
         client, _ = bring_client
         assert client.carrier == Carrier.BRING
+
+
+class TestRobustness:
+    """Tests for error statuses, malformed payloads and connection handling."""
+
+    @pytest.mark.parametrize("status", [429, 500, 503])
+    async def test_authenticate_unverifiable_status_raises(self, bring_client, status):
+        client, session = bring_client
+        session.get = AsyncMock(return_value=_mock_response(status=status))
+        with pytest.raises(CarrierApiError):
+            await client.authenticate()
+
+    async def test_authenticate_releases_response(self, bring_client):
+        client, session = bring_client
+        resp = _mock_response(status=404)
+        session.get = AsyncMock(return_value=resp)
+        assert await client.authenticate() is True
+        resp.release.assert_called_once()
+
+    async def test_track_shipment_404_is_not_found(self, bring_client):
+        client, session = bring_client
+        resp = _mock_response(status=404)
+        session.get = AsyncMock(return_value=resp)
+        with pytest.raises(CarrierNotFoundError):
+            await client.track_shipment("UNKNOWN1")
+        resp.release.assert_called_once()
+
+    async def test_track_shipment_body_timeout_raises_api_error(self, bring_client):
+        client, session = bring_client
+        resp = _mock_response()
+        resp.json = AsyncMock(side_effect=TimeoutError)
+        session.get = AsyncMock(return_value=resp)
+        with pytest.raises(CarrierApiError):
+            await client.track_shipment("TRACK001")
+
+    async def test_track_shipment_skips_null_fields(self, bring_client):
+        client, session = bring_client
+        good = {"dateIso": "2026-04-13T10:30:00+02:00", "status": "DELIVERED"}
+        payload = {
+            "consignmentSet": [
+                {
+                    "packageSet": [
+                        {
+                            "packageNumber": "PKG1",
+                            "eventSet": [{"dateIso": None, "status": "IN_TRANSIT"}, good],
+                        },
+                        {
+                            "packageNumber": "PKG2",
+                            "eventSet": [{"dateIso": good["dateIso"], "status": None}],
+                        },
+                    ]
+                }
+            ]
+        }
+        session.get = AsyncMock(return_value=_mock_response(payload=payload))
+        first, second = await client.track_shipment("CONSIGNMENT")
+        assert first.status == ShipmentStatus.DELIVERED
+        assert second.status == ShipmentStatus.UNKNOWN

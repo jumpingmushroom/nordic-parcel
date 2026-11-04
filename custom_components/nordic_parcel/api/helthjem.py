@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 import urllib.parse
-from datetime import UTC, datetime
+from datetime import datetime
 
 import aiohttp
 
@@ -107,12 +107,12 @@ def _map_event_code(code: str) -> ShipmentStatus:
 
 
 def _parse_event(event: dict) -> TrackingEvent:
-    """Parse a Helthjem tracking event."""
+    """Parse a Helthjem tracking event.
+
+    Raises on a malformed event; callers skip those.
+    """
     timestamp_str = event.get("timestamp") or event.get("eventTime", "")
-    try:
-        timestamp = ensure_aware(datetime.fromisoformat(timestamp_str))
-    except ValueError:
-        timestamp = datetime.now(UTC)
+    timestamp = ensure_aware(datetime.fromisoformat(timestamp_str))
 
     event_code = str(event.get("eventCode", event.get("code", "")))
     description = event.get("description", event.get("text", ""))
@@ -163,6 +163,8 @@ class HelthjemApiClient:
         except (aiohttp.ClientError, TimeoutError) as err:
             raise CarrierApiError(f"Token request failed: {err}") from err
 
+        if resp.status not in (200, 400):
+            resp.release()
         if resp.status in (401, 403):
             raise CarrierAuthError("Invalid Helthjem client credentials")
         # OAuth2 token endpoints return 400 with an ``error`` code for bad
@@ -171,10 +173,11 @@ class HelthjemApiClient:
         if resp.status == 400:
             error_code = ""
             try:
-                body = await resp.json()
+                async with asyncio.timeout(10):
+                    body = await resp.json()
                 if isinstance(body, dict):
                     error_code = body.get("error", "")
-            except (aiohttp.ClientError, ValueError):
+            except (aiohttp.ClientError, TimeoutError, ValueError):
                 pass
             if error_code in ("invalid_client", "unauthorized_client", "invalid_grant"):
                 raise CarrierAuthError("Invalid Helthjem client credentials")
@@ -182,9 +185,10 @@ class HelthjemApiClient:
             raise CarrierApiError(f"Helthjem token endpoint returned {resp.status}")
 
         try:
-            data = await resp.json()
+            async with asyncio.timeout(10):
+                data = await resp.json()
             self._access_token = data["access_token"]
-        except (aiohttp.ClientError, ValueError, KeyError) as err:
+        except (aiohttp.ClientError, TimeoutError, ValueError, KeyError) as err:
             raise CarrierApiError(f"Invalid Helthjem token response: {err}") from err
         expires_in = data.get("expires_in", 86400)  # Default 24h
         self._token_expires_at = time.time() + expires_in - _TOKEN_BUFFER_SECONDS
@@ -205,13 +209,6 @@ class HelthjemApiClient:
         except CarrierAuthError:
             return False
 
-    async def get_shipments(self) -> list[Shipment]:
-        """Helthjem API doesn't support listing all shipments for an account.
-
-        Returns an empty list. Users must add tracking numbers manually.
-        """
-        return []
-
     async def track_shipment(self, tracking_id: str) -> list[Shipment]:
         """Fetch tracking data for a single shipment."""
         token = await self._ensure_token()
@@ -228,6 +225,7 @@ class HelthjemApiClient:
             raise CarrierApiError(f"Connection error: {err}") from err
 
         if resp.status in (401, 403):
+            resp.release()
             # Token might be stale, clear and retry once
             self._access_token = None
             token = await self._ensure_token()
@@ -241,8 +239,11 @@ class HelthjemApiClient:
                 raise CarrierApiError(f"Connection error: {err}") from err
 
             if resp.status in (401, 403):
+                resp.release()
                 raise CarrierAuthError("Invalid Helthjem credentials")
 
+        if resp.status != 200:
+            resp.release()
         if resp.status == 429:
             raise CarrierRateLimitError("Helthjem API rate limit exceeded")
         if resp.status == 404:
@@ -251,8 +252,9 @@ class HelthjemApiClient:
             raise CarrierApiError(f"Helthjem API returned status {resp.status}")
 
         try:
-            data = await resp.json()
-        except (aiohttp.ClientError, ValueError) as err:
+            async with asyncio.timeout(10):
+                data = await resp.json()
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             raise CarrierApiError(f"Invalid Helthjem API response: {err}") from err
 
         # Response may contain multiple parcels for a single shipment
@@ -262,11 +264,13 @@ class HelthjemApiClient:
 
         # Collect events from all parcels
         events: list[TrackingEvent] = []
-        raw_data = parcels[0] if len(parcels) == 1 else {"parcels": parcels}
 
         for parcel in parcels:
             for event in parcel.get("events", []):
-                events.append(_parse_event(event))
+                try:
+                    events.append(_parse_event(event))
+                except (AttributeError, KeyError, TypeError, ValueError) as err:
+                    _LOGGER.debug("Skipping malformed Helthjem event: %s", err)
 
         events.sort(key=lambda e: e.timestamp, reverse=True)
         status = events[0].status if events else ShipmentStatus.UNKNOWN
@@ -276,13 +280,9 @@ class HelthjemApiClient:
                 tracking_id=tracking_id,
                 carrier=Carrier.HELTHJEM,
                 status=status,
-                sender=parcels[0].get("shop", {}).get("name") if parcels else None,
+                sender=(parcels[0].get("shop") or {}).get("name"),
                 recipient=None,
                 estimated_delivery=None,
                 events=events,
-                raw_data=raw_data,
             )
         ]
-
-    async def close(self) -> None:
-        """No-op — session lifecycle managed externally."""
