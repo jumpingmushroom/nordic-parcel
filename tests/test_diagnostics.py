@@ -62,5 +62,7 @@ async def test_diagnostics_masks_tracking_ids_and_credentials(
 
     assert FULL_ID not in serialized
     assert "test-api-key" not in serialized
+    # The Bring UID is embedded in the entry title and unique_id.
+    assert "test@example.com" not in serialized
     # The masked form should be present in the manual_tracking section.
     assert _mask_tracking_id(FULL_ID) in serialized

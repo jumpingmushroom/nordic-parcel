@@ -201,15 +201,6 @@ class TestUrlEncoding:
         assert urllib.parse.quote("HJ 123+456", safe="") in call_url
 
 
-class TestGetShipments:
-    """Tests for HelthjemApiClient.get_shipments()."""
-
-    async def test_get_shipments_returns_empty(self, helthjem_client):
-        client, _ = helthjem_client
-        result = await client.get_shipments()
-        assert result == []
-
-
 class TestEventCodeMapping:
     """Tests for Helthjem event code mapping."""
 
@@ -242,3 +233,46 @@ class TestCarrierProperty:
     def test_carrier_is_helthjem(self, helthjem_client):
         client, _ = helthjem_client
         assert client.carrier == Carrier.HELTHJEM
+
+
+class TestRobustness:
+    """Tests for malformed payloads and connection handling."""
+
+    async def test_malformed_events_do_not_become_the_newest_event(self, helthjem_client):
+        client, session = helthjem_client
+        payload = {
+            "shop": None,
+            "events": [
+                {"timestamp": "not-a-date", "eventCode": "003"},
+                {"eventTime": None, "eventCode": "003"},
+                {"timestamp": "2026-04-13T08:00:00+00:00", "eventCode": "013"},
+            ],
+        }
+        _setup_token_then_track(session, track_payload=payload)
+        (shipment,) = await client.track_shipment("HJ1")
+        assert shipment.status == ShipmentStatus.DELIVERED
+        assert len(shipment.events) == 1
+        assert shipment.sender is None
+
+    async def test_track_shipment_body_timeout_raises_api_error(self, helthjem_client):
+        client, session = helthjem_client
+        _setup_token_then_track(session)
+        session.get.return_value.json = AsyncMock(side_effect=TimeoutError)
+        with pytest.raises(CarrierApiError):
+            await client.track_shipment("HJ1")
+
+    async def test_error_response_is_released(self, helthjem_client):
+        client, session = helthjem_client
+        _setup_token_then_track(session, track_status=500)
+        with pytest.raises(CarrierApiError):
+            await client.track_shipment("HJ1")
+        session.get.return_value.release.assert_called_once()
+
+    async def test_stale_token_response_is_released_before_retry(self, helthjem_client):
+        client, session = helthjem_client
+        _setup_token_then_track(session)
+        stale = _mock_response(status=401)
+        fresh = _mock_response(payload={"events": []})
+        session.get = AsyncMock(side_effect=[stale, fresh])
+        await client.track_shipment("HJ1")
+        stale.release.assert_called_once()

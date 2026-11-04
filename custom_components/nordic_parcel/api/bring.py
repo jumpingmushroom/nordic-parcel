@@ -66,7 +66,7 @@ def _parse_event(event: dict) -> TrackingEvent:
         timestamp=timestamp,
         description=event.get("description", ""),
         location=location,
-        status=_map_status(event.get("status", "")),
+        status=_map_status(event.get("status") or ""),
     )
 
 
@@ -98,7 +98,7 @@ def _parse_consignment(consignment: dict) -> list[Shipment]:
         for e in package.get("eventSet", []):
             try:
                 events.append(_parse_event(e))
-            except (KeyError, ValueError) as err:
+            except (AttributeError, KeyError, TypeError, ValueError) as err:
                 _LOGGER.debug("Skipping malformed Bring event: %s", err)
         # Events are newest-first from Bring
         status = events[0].status if events else ShipmentStatus.UNKNOWN
@@ -118,7 +118,6 @@ def _parse_consignment(consignment: dict) -> list[Shipment]:
                 recipient=pkg_recipient,
                 estimated_delivery=estimated_delivery,
                 events=events,
-                raw_data=package,
             )
         )
 
@@ -160,17 +159,12 @@ class BringApiClient:
                     params={"q": "TESTPACKAGE00000"},
                     headers=self._headers(),
                 )
+            resp.release()
+            if resp.status == 429 or resp.status >= 500:
+                raise CarrierApiError(f"Bring API returned status {resp.status}")
             return resp.status not in (401, 403)
         except (aiohttp.ClientError, TimeoutError) as err:
             raise CarrierApiError("Could not connect to Bring API") from err
-
-    async def get_shipments(self) -> list[Shipment]:
-        """Bring API doesn't support listing all shipments for an account.
-
-        Returns an empty list. Users must add tracking numbers manually
-        or rely on external automation.
-        """
-        return []
 
     async def track_shipment(self, tracking_id: str) -> list[Shipment]:
         """Fetch tracking data for a shipment (may return multiple packages)."""
@@ -184,16 +178,21 @@ class BringApiClient:
         except (aiohttp.ClientError, TimeoutError) as err:
             raise CarrierApiError(f"Connection error: {err}") from err
 
+        if resp.status != 200:
+            resp.release()
         if resp.status == 401 or resp.status == 403:
             raise CarrierAuthError("Invalid Bring API credentials")
         if resp.status == 429:
             raise CarrierRateLimitError("Bring API rate limit exceeded")
+        if resp.status == 404:
+            raise CarrierNotFoundError(f"No shipment found for {tracking_id}")
         if resp.status != 200:
             raise CarrierApiError(f"Bring API returned status {resp.status}")
 
         try:
-            data = await resp.json()
-        except (aiohttp.ClientError, ValueError) as err:
+            async with asyncio.timeout(10):
+                data = await resp.json()
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             raise CarrierApiError(f"Invalid Bring API response: {err}") from err
 
         consignment_set = data.get("consignmentSet", [])
@@ -212,6 +211,3 @@ class BringApiClient:
             raise CarrierNotFoundError(f"No packages found for {tracking_id}")
 
         return shipments
-
-    async def close(self) -> None:
-        """No-op — session lifecycle managed externally."""

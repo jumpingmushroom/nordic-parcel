@@ -119,6 +119,9 @@
     }
   },
   "exceptions": {
+    "carrier_unavailable": {
+      "message": "Could not verify tracking ID {tracking_id} because a carrier API failed. Try again later."
+    },
     "no_matching_carrier": {
       "message": "No matching carrier configured for tracking {tracking_id}."
     },

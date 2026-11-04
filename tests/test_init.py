@@ -8,14 +8,22 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import entity_registry as er
 
+from custom_components.nordic_parcel.api import (
+    CarrierApiError,
+    CarrierNotFoundError,
+    Shipment,
+)
 from custom_components.nordic_parcel.const import (
     CONF_MANUAL_TRACKING,
     CONF_SCAN_INTERVAL,
     DOMAIN,
     Carrier,
+    ShipmentStatus,
 )
+from custom_components.nordic_parcel.coordinator import NordicParcelCoordinator
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -26,9 +34,7 @@ def _mock_client(carrier: Carrier = Carrier.BRING) -> AsyncMock:
     """Create a mock CarrierClient."""
     client = AsyncMock()
     client.carrier = carrier
-    client.get_shipments = AsyncMock(return_value=[])
     client.track_shipment = AsyncMock(return_value=[])
-    client.close = AsyncMock()
     return client
 
 
@@ -56,7 +62,14 @@ async def test_async_setup_entry_auth_failure(hass: HomeAssistant, mock_bring_co
     from custom_components.nordic_parcel.api import CarrierAuthError
 
     client = _mock_client()
-    client.get_shipments.side_effect = CarrierAuthError("Bad auth")
+    client.track_shipment.side_effect = CarrierAuthError("Bad auth")
+    hass.config_entries.async_update_entry(
+        mock_bring_config_entry,
+        data={
+            **mock_bring_config_entry.data,
+            CONF_MANUAL_TRACKING: {"TRACK001": {"added": "2026-04-13T00:00:00+00:00"}},
+        },
+    )
 
     with patch("custom_components.nordic_parcel._create_client", return_value=client):
         await hass.config_entries.async_setup(mock_bring_config_entry.entry_id)
@@ -484,3 +497,208 @@ async def test_remove_tracking_not_found(hass: HomeAssistant, mock_bring_config_
             {"tracking_id": "DOESNOTEXIST"},
             blocking=True,
         )
+
+
+# ---------------------------------------------------------------------------
+# Service normalization and probe failures
+# ---------------------------------------------------------------------------
+
+
+async def test_add_tracking_uppercases_id(hass: HomeAssistant, mock_bring_config_entry) -> None:
+    """Test add_tracking uppercases the tracking ID."""
+    with patch("custom_components.nordic_parcel._create_client", return_value=_mock_client()):
+        await hass.config_entries.async_setup(mock_bring_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        DOMAIN, "add_tracking", {"tracking_id": " abc123 "}, blocking=True
+    )
+
+    assert list(mock_bring_config_entry.data[CONF_MANUAL_TRACKING]) == ["ABC123"]
+
+
+async def test_add_tracking_probe_outage_is_not_reported_as_unknown_id(
+    hass: HomeAssistant,
+) -> None:
+    """A carrier outage during probing must not claim the ID is unrecognized."""
+    bring_client, postnord_client = _two_entries(hass)
+    bring_client.track_shipment.side_effect = CarrierNotFoundError("nope")
+    postnord_client.track_shipment.side_effect = CarrierApiError("down")
+    await _setup_two_entries(hass, bring_client, postnord_client)
+
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await hass.services.async_call(
+            DOMAIN, "add_tracking", {"tracking_id": "UNKNOWN1"}, blocking=True
+        )
+    assert not isinstance(exc_info.value, ServiceValidationError)
+
+
+# ---------------------------------------------------------------------------
+# Sensor lifecycle
+# ---------------------------------------------------------------------------
+
+
+def _two_entries(hass: HomeAssistant) -> tuple[AsyncMock, AsyncMock]:
+    """Add a Bring and a Postnord entry, returning their mock clients."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.nordic_parcel.const import CONF_API_KEY, CONF_API_UID, CONF_CARRIER
+
+    MockConfigEntry(
+        domain=DOMAIN,
+        title="Bring",
+        data={
+            CONF_CARRIER: Carrier.BRING,
+            CONF_API_UID: "a@b.com",
+            CONF_API_KEY: "k1",
+            CONF_MANUAL_TRACKING: {"BRING1": {"added": "2026-04-13T00:00:00+00:00"}},
+        },
+        unique_id="bring_two",
+    ).add_to_hass(hass)
+    MockConfigEntry(
+        domain=DOMAIN,
+        title="Postnord",
+        data={
+            CONF_CARRIER: Carrier.POSTNORD,
+            CONF_API_KEY: "k2",
+            CONF_MANUAL_TRACKING: {"POST1": {"added": "2026-04-13T00:00:00+00:00"}},
+        },
+        unique_id="postnord_two",
+    ).add_to_hass(hass)
+
+    bring_client = _mock_client(Carrier.BRING)
+    bring_client.track_shipment.return_value = [_shipment("BRING1", Carrier.BRING)]
+    postnord_client = _mock_client(Carrier.POSTNORD)
+    postnord_client.track_shipment.return_value = [_shipment("POST1", Carrier.POSTNORD)]
+    return bring_client, postnord_client
+
+
+async def _setup_two_entries(
+    hass: HomeAssistant, bring_client: AsyncMock, postnord_client: AsyncMock
+) -> None:
+    """Set up both entries from _two_entries, Bring first."""
+    bring_entry, postnord_entry = hass.config_entries.async_entries(DOMAIN)
+    with patch(
+        "custom_components.nordic_parcel._create_client",
+        side_effect=[bring_client, postnord_client],
+    ):
+        await hass.config_entries.async_setup(bring_entry.entry_id)
+        await hass.async_block_till_done()
+        if postnord_entry.state is not ConfigEntryState.LOADED:
+            await hass.config_entries.async_setup(postnord_entry.entry_id)
+            await hass.async_block_till_done()
+
+
+def _shipment(tracking_id: str, carrier: Carrier = Carrier.BRING) -> Shipment:
+    """Create an in-transit shipment."""
+    return Shipment(tracking_id=tracking_id, carrier=carrier, status=ShipmentStatus.IN_TRANSIT)
+
+
+def _sensor_entity_id(hass: HomeAssistant, tracking_id: str) -> str | None:
+    """Return the registered entity ID for a parcel."""
+    return er.async_get(hass).async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{tracking_id}")
+
+
+def _summary_state(hass: HomeAssistant):
+    """Return the state object of the summary sensor."""
+    entity_id = er.async_get(hass).async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_summary")
+    return hass.states.get(entity_id) if entity_id else None
+
+
+async def _setup_with_parcels(
+    hass: HomeAssistant, entry, client: AsyncMock, *tracking_ids: str
+) -> NordicParcelCoordinator:
+    """Set up an entry tracking the given parcels."""
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **entry.data,
+            CONF_MANUAL_TRACKING: {
+                tid: {"added": "2026-04-13T00:00:00+00:00"} for tid in tracking_ids
+            },
+        },
+    )
+    client.track_shipment.side_effect = lambda tid: [_shipment(tid)]
+    with patch("custom_components.nordic_parcel._create_client", return_value=client):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    return entry.runtime_data
+
+
+async def test_transient_failure_keeps_entity_registered(
+    hass: HomeAssistant, mock_bring_config_entry
+) -> None:
+    """One parcel failing while another succeeds must not delete its sensor."""
+    client = _mock_client()
+    coordinator = await _setup_with_parcels(
+        hass, mock_bring_config_entry, client, "TRACK001", "TRACK002"
+    )
+    entity_id = _sensor_entity_id(hass, "TRACK001")
+    assert entity_id is not None
+
+    def _fail_first(tracking_id: str) -> list[Shipment]:
+        if tracking_id == "TRACK001":
+            raise CarrierApiError("Bad gateway")
+        return [_shipment(tracking_id)]
+
+    client.track_shipment.side_effect = _fail_first
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert _sensor_entity_id(hass, "TRACK001") == entity_id
+    assert hass.states.get(entity_id).state == ShipmentStatus.IN_TRANSIT
+
+
+async def test_removing_last_parcel_removes_its_entity(
+    hass: HomeAssistant, mock_bring_config_entry
+) -> None:
+    """Empty coordinator data must still clean up the last sensor."""
+    client = _mock_client()
+    coordinator = await _setup_with_parcels(hass, mock_bring_config_entry, client, "TRACK001")
+    assert _sensor_entity_id(hass, "TRACK001") is not None
+
+    await coordinator.remove_tracking("TRACK001")
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert _sensor_entity_id(hass, "TRACK001") is None
+
+
+async def test_summary_moves_when_owning_entry_is_removed(hass: HomeAssistant) -> None:
+    """Removing the entry that owns the summary must leave a working summary."""
+    bring_client, postnord_client = _two_entries(hass)
+    await _setup_two_entries(hass, bring_client, postnord_client)
+    bring_entry, postnord_entry = hass.config_entries.async_entries(DOMAIN)
+    assert _summary_state(hass).state == "2"
+
+    await hass.config_entries.async_remove(bring_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert _summary_state(hass).state == "1"
+    summary = hass.data[DOMAIN]["summary_entity"]
+    assert summary.added
+
+    # The moved summary follows the surviving coordinator.
+    postnord_client.track_shipment.return_value = [
+        Shipment("POST1", Carrier.POSTNORD, ShipmentStatus.DELIVERED)
+    ]
+    await postnord_entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert _summary_state(hass).state == "0"
+
+
+async def test_summary_recounts_and_unsubscribes_when_other_entry_unloads(
+    hass: HomeAssistant,
+) -> None:
+    """Unloading a non-owning entry must drop its parcels and its listener."""
+    bring_client, postnord_client = _two_entries(hass)
+    await _setup_two_entries(hass, bring_client, postnord_client)
+    _, postnord_entry = hass.config_entries.async_entries(DOMAIN)
+    summary = hass.data[DOMAIN]["summary_entity"]
+    assert postnord_entry.entry_id in summary._unsub_listeners
+
+    await hass.config_entries.async_unload(postnord_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert _summary_state(hass).state == "1"
+    assert postnord_entry.entry_id not in summary._unsub_listeners

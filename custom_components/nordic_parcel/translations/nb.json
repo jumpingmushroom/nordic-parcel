@@ -119,6 +119,9 @@
     }
   },
   "exceptions": {
+    "carrier_unavailable": {
+      "message": "Kunne ikke bekrefte sporings-ID {tracking_id} fordi et transportør-API feilet. Prøv igjen senere."
+    },
     "no_matching_carrier": {
       "message": "Ingen matchende transportør konfigurert for sporing {tracking_id}."
     },

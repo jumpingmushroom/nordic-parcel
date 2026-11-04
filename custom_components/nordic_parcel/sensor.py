@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from typing import ClassVar
 
@@ -19,8 +18,6 @@ from .api import Shipment
 from .const import DOMAIN, ShipmentStatus
 from .coordinator import NordicParcelCoordinator
 
-_LOGGER = logging.getLogger(__name__)
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -35,7 +32,7 @@ async def async_setup_entry(
     @callback
     def _async_add_new_entities() -> None:
         """Add sensors for newly discovered shipments."""
-        if not coordinator.data:
+        if coordinator.data is None:
             return
 
         new_entities = []
@@ -67,14 +64,34 @@ async def async_setup_entry(
     # Create or update the global summary sensor. Reuse the existing entity
     # only if it is still added to hass — a summary created by a now-unloaded
     # entry leaves a stale reference behind, and writing state on it would fail.
-    domain_data = hass.data.get(DOMAIN, {})
+    domain_data = hass.data[DOMAIN]
+    domain_data["summary_adders"][entry.entry_id] = async_add_entities
     summary: NordicParcelSummarySensor | None = domain_data.get("summary_entity")
     if summary is None or not summary.added:
-        summary = NordicParcelSummarySensor(hass)
-        domain_data["summary_entity"] = summary
-        async_add_entities([summary])
+        _async_add_summary(hass, async_add_entities)
     else:
         summary.add_coordinator(coordinator)
+
+
+@callback
+def _async_add_summary(hass: HomeAssistant, async_add_entities: AddEntitiesCallback) -> None:
+    """Create the summary sensor on the platform of the given adder."""
+    summary = NordicParcelSummarySensor(hass)
+    hass.data[DOMAIN]["summary_entity"] = summary
+    async_add_entities([summary])
+
+
+@callback
+def async_entry_unloaded(hass: HomeAssistant, entry_id: str) -> None:
+    """Drop an unloaded entry from the summary, moving the summary if that entry owned it."""
+    domain_data = hass.data[DOMAIN]
+    adders = domain_data["summary_adders"]
+    adders.pop(entry_id, None)
+    summary: NordicParcelSummarySensor | None = domain_data.get("summary_entity")
+    if summary is not None and summary.added:
+        summary.remove_coordinator(entry_id)
+    elif adders:
+        _async_add_summary(hass, next(iter(adders.values())))
 
 
 class NordicParcelSensor(CoordinatorEntity[NordicParcelCoordinator], SensorEntity):
@@ -173,7 +190,7 @@ class NordicParcelSummarySensor(SensorEntity):
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
-        self._unsub_listeners: list[Callable] = []
+        self._unsub_listeners: dict[str, Callable] = {}
         self._added = False
 
     @property
@@ -221,9 +238,22 @@ class NordicParcelSummarySensor(SensorEntity):
 
         self.async_write_ha_state()
 
+    def _subscribe(self, coordinator: NordicParcelCoordinator) -> None:
+        """Listen to a coordinator, replacing any listener for the same entry."""
+        entry_id = coordinator.config_entry.entry_id
+        if unsub := self._unsub_listeners.pop(entry_id, None):
+            unsub()
+        self._unsub_listeners[entry_id] = coordinator.async_add_listener(self._aggregate)
+
     def add_coordinator(self, coordinator: NordicParcelCoordinator) -> None:
         """Subscribe to a new coordinator's updates."""
-        self._unsub_listeners.append(coordinator.async_add_listener(self._aggregate))
+        self._subscribe(coordinator)
+        self._aggregate()
+
+    def remove_coordinator(self, entry_id: str) -> None:
+        """Stop following an unloaded entry and recount without it."""
+        if unsub := self._unsub_listeners.pop(entry_id, None):
+            unsub()
         self._aggregate()
 
     async def async_added_to_hass(self) -> None:
@@ -232,13 +262,13 @@ class NordicParcelSummarySensor(SensorEntity):
         domain_data = self.hass.data.get(DOMAIN, {})
         coordinators = domain_data.get("coordinators", {})
         for coordinator in coordinators.values():
-            self._unsub_listeners.append(coordinator.async_add_listener(self._aggregate))
+            self._subscribe(coordinator)
         self._aggregate()
 
     async def async_will_remove_from_hass(self) -> None:
         """Unsubscribe from all coordinators."""
         self._added = False
-        for unsub in self._unsub_listeners:
+        for unsub in self._unsub_listeners.values():
             unsub()
         self._unsub_listeners.clear()
         # Always drop the shared reference: this instance is being removed, so
